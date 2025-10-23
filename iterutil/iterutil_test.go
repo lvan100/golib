@@ -51,35 +51,135 @@ func BenchmarkRanges(b *testing.B) {
 }
 
 func TestTimes(t *testing.T) {
-	var arr []int
-	Times(5, func(i int) {
-		arr = append(arr, i)
+	t.Run("positive count", func(t *testing.T) {
+		var arr []int
+		Times(5, func(i int) {
+			arr = append(arr, i)
+		})
+		assert.That(t, arr).Equal([]int{0, 1, 2, 3, 4})
 	})
-	assert.That(t, arr).Equal([]int{0, 1, 2, 3, 4})
+
+	t.Run("zero count", func(t *testing.T) {
+		var arr []int
+		Times(0, func(i int) {
+			arr = append(arr, i)
+		})
+		assert.That(t, arr).Nil()
+	})
+
+	t.Run("negative count", func(t *testing.T) {
+		var arr []int
+		Times(-1, func(i int) {
+			arr = append(arr, i)
+		})
+		assert.That(t, arr).Nil()
+	})
 }
 
 func TestRanges(t *testing.T) {
-	var arr []int
-	Ranges(1, 5, func(i int) {
-		arr = append(arr, i)
+	t.Run("forward range", func(t *testing.T) {
+		var arr []int
+		Ranges(1, 5, func(i int) {
+			arr = append(arr, i)
+		})
+		assert.That(t, arr).Equal([]int{1, 2, 3, 4})
 	})
-	assert.That(t, arr).Equal([]int{1, 2, 3, 4})
-	arr = nil
-	Ranges(5, 1, func(i int) {
-		arr = append(arr, i)
+
+	t.Run("backward range", func(t *testing.T) {
+		var arr []int
+		Ranges(5, 1, func(i int) {
+			arr = append(arr, i)
+		})
+		assert.That(t, arr).Equal([]int{5, 4, 3, 2})
 	})
-	assert.That(t, arr).Equal([]int{5, 4, 3, 2})
+
+	t.Run("equal start and end", func(t *testing.T) {
+		var arr []int
+		Ranges(3, 3, func(i int) {
+			arr = append(arr, i)
+		})
+		assert.That(t, arr).Nil()
+	})
+
+	t.Run("negative forward range", func(t *testing.T) {
+		var arr []int
+		Ranges(-3, 2, func(i int) {
+			arr = append(arr, i)
+		})
+		assert.That(t, arr).Equal([]int{-3, -2, -1, 0, 1})
+	})
+
+	t.Run("negative backward range", func(t *testing.T) {
+		var arr []int
+		Ranges(2, -3, func(i int) {
+			arr = append(arr, i)
+		})
+		assert.That(t, arr).Equal([]int{2, 1, 0, -1, -2})
+	})
 }
 
 func TestStepRanges(t *testing.T) {
-	var arr []int
-	StepRanges(1, 5, 2, func(i int) {
-		arr = append(arr, i)
+	t.Run("positive step", func(t *testing.T) {
+		var arr []int
+		StepRanges(1, 5, 2, func(i int) {
+			arr = append(arr, i)
+		})
+		assert.That(t, arr).Equal([]int{1, 3})
 	})
-	assert.That(t, arr).Equal([]int{1, 3})
-	arr = nil
-	StepRanges(5, 1, -2, func(i int) {
-		arr = append(arr, i)
+
+	t.Run("negative step", func(t *testing.T) {
+		var arr []int
+		StepRanges(5, 1, -2, func(i int) {
+			arr = append(arr, i)
+		})
+		assert.That(t, arr).Equal([]int{5, 3})
 	})
-	assert.That(t, arr).Equal([]int{5, 3})
+
+	t.Run("zero step", func(t *testing.T) {
+		var arr []int
+		StepRanges(1, 5, 0, func(i int) {
+			arr = append(arr, i)
+		})
+		assert.That(t, arr).Nil()
+	})
+
+	t.Run("step larger than range", func(t *testing.T) {
+		var arr []int
+		StepRanges(1, 5, 10, func(i int) {
+			arr = append(arr, i)
+		})
+		assert.That(t, arr).Equal([]int{1})
+	})
+
+	t.Run("negative step with wrong direction", func(t *testing.T) {
+		var arr []int
+		StepRanges(1, 5, -1, func(i int) {
+			arr = append(arr, i)
+		})
+		assert.That(t, arr).Nil()
+	})
+
+	t.Run("positive step with wrong direction", func(t *testing.T) {
+		var arr []int
+		StepRanges(5, 1, 1, func(i int) {
+			arr = append(arr, i)
+		})
+		assert.That(t, arr).Nil()
+	})
+
+	t.Run("equal start and end with positive step", func(t *testing.T) {
+		var arr []int
+		StepRanges(3, 3, 1, func(i int) {
+			arr = append(arr, i)
+		})
+		assert.That(t, arr).Nil()
+	})
+
+	t.Run("large negative step", func(t *testing.T) {
+		var arr []int
+		StepRanges(10, 0, -3, func(i int) {
+			arr = append(arr, i)
+		})
+		assert.That(t, arr).Equal([]int{10, 7, 4, 1})
+	})
 }
