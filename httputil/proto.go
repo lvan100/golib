@@ -20,12 +20,14 @@ import (
 	"encoding/json"
 	"net/url"
 	"strconv"
+
+	"github.com/lvan100/golib/ordered"
 )
 
 var (
 	// FORM provides an implementation of the Protocol interface using
 	// application/x-www-form-urlencoded encoding.
-	FORM Protocol = &FormProtocol{}
+	FORM Protocol = &FORMProtocol{}
 
 	// JSON provides an implementation of the Protocol interface using
 	// JSON encoding.
@@ -39,13 +41,13 @@ type Protocol interface {
 	Decode(data []byte, v any) error
 }
 
-// FormProtocol implements the Protocol interface for the
+// FORMProtocol implements the Protocol interface for the
 // application/x-www-form-urlencoded format.
-type FormProtocol struct{}
+type FORMProtocol struct{}
 
 // Encode serializes the given value into an application/x-www-form-urlencoded
 // encoded byte slice.
-func (p *FormProtocol) Encode(i any) ([]byte, error) {
+func (p *FORMProtocol) Encode(i any) ([]byte, error) {
 	if i == nil {
 		return []byte(""), nil
 	}
@@ -61,9 +63,10 @@ func (p *FormProtocol) Encode(i any) ([]byte, error) {
 	}
 
 	u := url.Values{}
-	for k, v := range m {
-		if len(v) > 0 && v[0] == '"' {
-			s, err := strconv.Unquote(string(v))
+	for _, k := range ordered.MapKeys(m) {
+		if v := m[k]; len(v) > 0 && v[0] == '"' {
+			var s string
+			s, err = strconv.Unquote(string(v))
 			if err != nil {
 				return nil, err
 			}
@@ -78,7 +81,7 @@ func (p *FormProtocol) Encode(i any) ([]byte, error) {
 
 // Decode deserializes application/x-www-form-urlencoded data into the
 // provided struct or map.
-func (p *FormProtocol) Decode(data []byte, v any) error {
+func (p *FORMProtocol) Decode(data []byte, v any) error {
 	panic("not implemented")
 }
 

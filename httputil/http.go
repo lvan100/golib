@@ -17,29 +17,115 @@
 package httputil
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
+	"sync/atomic"
+	"time"
 )
 
-// HTTPClient defines a customizable HTTP executor interface.
-// Implementing this interface allows users to provide their own
-// HTTP execution logic (for example, to add retry, logging, or tracing).
-type HTTPClient interface {
-	Do(req *http.Request) (*http.Response, []byte, error)
+// Message represents a single message unit read from the stream.
+type Message struct {
+	data string
+	err  error
 }
 
-// DefaultHTTPClient is the default implementation of HTTPClient,
+// Stream manages streaming data asynchronously from an HTTP response.
+// It supports safe concurrent use and can be closed idempotently.
+type Stream struct {
+	msgs   chan Message
+	curr   Message
+	closed atomic.Bool
+	done   chan struct{}
+}
+
+// NewStream creates and initializes a new Stream instance.
+func NewStream() *Stream {
+	return &Stream{
+		msgs: make(chan Message),
+		done: make(chan struct{}),
+	}
+}
+
+// Close closes the Stream safely (idempotent).
+// It ensures that the internal channels are closed only once.
+func (s *Stream) Close() {
+	if s.closed.CompareAndSwap(false, true) {
+		close(s.done)
+		close(s.msgs)
+	}
+}
+
+// Text returns the latest data read from the stream.
+func (s *Stream) Text() string {
+	return s.curr.data
+}
+
+// Error returns the last error encountered by the stream.
+func (s *Stream) Error() error {
+	return s.curr.err
+}
+
+// Next waits for the next data from the stream until timeout.
+// Returns true if a new data item is available, false otherwise.
+func (s *Stream) Next(timeout time.Duration) bool {
+	if s.closed.Load() {
+		return false
+	}
+	select {
+	case <-time.After(timeout):
+		s.curr.data = ""
+		s.curr.err = context.DeadlineExceeded
+		return false
+	case s.curr, _ = <-s.msgs:
+		if s.curr.err != nil {
+			if s.curr.err == io.EOF {
+				s.curr.err = nil
+				return false
+			}
+			return false
+		}
+		return true
+	}
+}
+
+// send pushes a Message into the internal channel.
+// Returns false if the stream is closed or done.
+func (s *Stream) send(msg Message) bool {
+	if s.closed.Load() {
+		return false
+	}
+	select {
+	case <-s.done:
+		return false
+	case s.msgs <- msg:
+		return true
+	}
+}
+
+// Client defines a customizable HTTP executor interface.
+// Implementing this interface allows users to provide their own
+// HTTP execution logic (for example, to add retry, logging, or tracing).
+type Client interface {
+	JSON(req *http.Request) (*http.Response, []byte, error)
+	Stream(req *http.Request) (*http.Response, *Stream, error)
+}
+
+var _ Client = (*DefaultClient)(nil)
+
+// DefaultClient is the default implementation of Client,
 // which delegates to the standard library http.Client.
-type DefaultHTTPClient struct {
+type DefaultClient struct {
 	Client *http.Client
 	Scheme string
 	Host   string
 }
 
-// Do executes the HTTP request using the embedded http.Client.
+// JSON executes the HTTP request using the embedded http.Client.
 // It reads the entire response body into memory and returns both
 // the *http.Response and the body as a byte slice.
 //
@@ -47,15 +133,17 @@ type DefaultHTTPClient struct {
 // it can be read again by the caller if needed.
 //
 // Note: For very large responses, this may be memory intensive.
-func (c *DefaultHTTPClient) Do(r *http.Request) (*http.Response, []byte, error) {
+func (c *DefaultClient) JSON(r *http.Request) (*http.Response, []byte, error) {
 	r.Host = c.Host
 	r.URL.Host = c.Host
 	r.URL.Scheme = c.Scheme
+
 	resp, err := c.Client.Do(r)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer resp.Body.Close()
+
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, nil, err
@@ -65,9 +153,43 @@ func (c *DefaultHTTPClient) Do(r *http.Request) (*http.Response, []byte, error) 
 	return resp, b, nil
 }
 
+// Stream executes an HTTP request and continuously reads lines from the response body.
+// Each line is sent into the returned Stream channel asynchronously.
+func (c *DefaultClient) Stream(r *http.Request) (*http.Response, *Stream, error) {
+	r.Host = c.Host
+	r.URL.Host = c.Host
+	r.URL.Scheme = c.Scheme
+
+	resp, err := c.Client.Do(r)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	respStream := NewStream()
+	go func() {
+		defer resp.Body.Close()
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			text := strings.TrimSpace(scanner.Text())
+			if text == "" {
+				continue
+			}
+			if !respStream.send(Message{data: text}) {
+				return
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			respStream.send(Message{err: err})
+		} else {
+			respStream.send(Message{err: io.EOF})
+		}
+	}()
+	return resp, respStream, nil
+}
+
 // NewRequest creates a new HTTP request with the given context, method,
 // URL, protocol encoder, and request body.
-func NewRequest(ctx context.Context, method string, urlPath string, p Protocol, body any) (*http.Request, error) {
+func NewRequest(ctx context.Context, method string, url string, p Protocol, body any) (*http.Request, error) {
 	var reader io.Reader
 	if body != nil {
 		b, err := p.Encode(body)
@@ -76,20 +198,19 @@ func NewRequest(ctx context.Context, method string, urlPath string, p Protocol, 
 		}
 		reader = bytes.NewReader(b)
 	}
-	return http.NewRequestWithContext(ctx, method, urlPath, reader)
+	return http.NewRequestWithContext(ctx, method, url, reader)
 }
 
-// JSONResponse executes the given HTTP request using the provided HTTPClient,
+// JSONResponse executes the given HTTP request using the provided Client,
 // reads the response body, and unmarshal it into a value of type RespType.
-func JSONResponse[RespType any](c HTTPClient, r *http.Request) (*http.Response, *RespType, error) {
-	resp, b, err := c.Do(r)
+func JSONResponse[RespType any](c Client, r *http.Request) (*http.Response, *RespType, error) {
+	resp, b, err := c.JSON(r)
 	if err != nil {
 		return nil, nil, err
 	}
-	var ret *RespType
-	err = json.Unmarshal(b, &ret)
-	if err != nil {
+	var ret RespType
+	if err = json.Unmarshal(b, &ret); err != nil {
 		return nil, nil, err
 	}
-	return resp, ret, nil
+	return resp, &ret, nil
 }
