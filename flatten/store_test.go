@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 The Go-Spring Authors.
+ * Copyright 2025 The Go-Spring Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -385,7 +385,7 @@ func TestStorage(t *testing.T) {
 	})
 
 	t.Run("flatten & store", func(t *testing.T) {
-		m := FlattenMap(map[string]any{
+		m := Flatten(map[string]any{
 			"arr": []any{
 				"abc",
 				"def",

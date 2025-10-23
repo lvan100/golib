@@ -70,7 +70,7 @@ func main() {
 	}
 
 	// 扁平化数据
-	flat := flatten.FlattenMap(data)
+	flat := flatten.Flatten(data)
 
 	// 输出扁平化结果
 	for key, value := range flat {

@@ -74,7 +74,7 @@ func main() {
 	}
 
 	// Flatten the data
-	flat := flatten.FlattenMap(data)
+	flat := flatten.Flatten(data)
 
 	// Print flattened results
 	for key, value := range flat {
