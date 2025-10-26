@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -76,6 +77,8 @@ func (c *HelloClient) Stream(ctx context.Context, req *StreamRequest) (*http.Res
 
 func TestHello(t *testing.T) {
 	server := &http.Server{Addr: ":9090", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.Header.Write(os.Stdout)
+		fmt.Println()
 		_, _ = w.Write([]byte(fmt.Sprintf(`{"message": "hello %s"}`, r.URL.Query().Get("name"))))
 	})}
 
@@ -87,8 +90,11 @@ func TestHello(t *testing.T) {
 	}()
 	time.Sleep(time.Millisecond * 100)
 
+	h, ctx := AttachHeader(context.Background())
+	h.Set("X-Request-ID", "12345678")
+
 	client := &HelloClient{}
-	_, data, err := client.Hello(context.Background(), &HelloRequest{Name: "world"})
+	_, data, err := client.Hello(ctx, &HelloRequest{Name: "world"})
 	assert.Error(t, err).Nil()
 	assert.That(t, data).Equal(&HelloResponse{Message: "hello world"})
 
@@ -98,6 +104,8 @@ func TestHello(t *testing.T) {
 
 func TestStream(t *testing.T) {
 	server := http.Server{Addr: ":9090", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.Header.Write(os.Stdout)
+		fmt.Println()
 		for i := range 5 {
 			_, _ = w.Write([]byte(fmt.Sprintf("%d: ", i)))
 			_, _ = w.Write([]byte(`{"message": "hello world"}`))
@@ -105,6 +113,7 @@ func TestStream(t *testing.T) {
 			w.(http.Flusher).Flush()
 			time.Sleep(time.Millisecond * 500)
 		}
+		fmt.Println()
 		fmt.Println("server done")
 	})}
 
@@ -116,8 +125,11 @@ func TestStream(t *testing.T) {
 	}()
 	time.Sleep(time.Millisecond * 100)
 
+	h, ctx := AttachHeader(context.Background())
+	h.Set("X-Request-ID", "12345678")
+
 	client := &HelloClient{}
-	_, resp, err := client.Stream(context.Background(), &StreamRequest{Prompt: "hello"})
+	_, resp, err := client.Stream(ctx, &StreamRequest{Prompt: "hello"})
 	defer resp.Close()
 	assert.Error(t, err).Nil()
 

@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -187,6 +188,18 @@ func (c *DefaultClient) Stream(r *http.Request) (*http.Response, *Stream, error)
 	return resp, respStream, nil
 }
 
+var headerKey struct{}
+
+// AttachHeader attaches a http.Header to the given context.
+func AttachHeader(ctx context.Context) (http.Header, context.Context) {
+	v, _ := ctx.Value(&headerKey).(http.Header)
+	if v == nil {
+		v = http.Header{}
+		ctx = context.WithValue(ctx, &headerKey, v)
+	}
+	return v, ctx
+}
+
 // NewRequest creates a new HTTP request with the given context, method,
 // URL, protocol encoder, and request body.
 func NewRequest(ctx context.Context, method string, url string, p Protocol, body any) (*http.Request, error) {
@@ -198,7 +211,13 @@ func NewRequest(ctx context.Context, method string, url string, p Protocol, body
 		}
 		reader = bytes.NewReader(b)
 	}
-	return http.NewRequestWithContext(ctx, method, url, reader)
+	req, err := http.NewRequestWithContext(ctx, method, url, reader)
+	if err != nil {
+		return nil, err
+	}
+	headers, _ := AttachHeader(ctx)
+	maps.Copy(req.Header, headers)
+	return req, nil
 }
 
 // JSONResponse executes the given HTTP request using the provided Client,
