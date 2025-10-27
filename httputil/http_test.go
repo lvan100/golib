@@ -28,21 +28,33 @@ import (
 	"github.com/lvan100/golib/testing/assert"
 )
 
-// SetHeader sets the given http.Header to the RequestContext.
-func SetHeader(header http.Header) RequestOption {
-	return func(meta *RequestContext) {
-		meta.Header = header
-	}
+// LogClient is Client that logs the request and response.
+type LogClient struct {
+	Client
+}
+
+// JSON executes the given HTTP request using the provided Client.
+func (c *LogClient) JSON(req *http.Request, meta RequestContext) (*http.Response, []byte, error) {
+	fmt.Printf("%#v\n", meta)
+	return c.Client.JSON(req, meta)
+}
+
+// Stream executes the given HTTP request using the provided Client.
+func (c *LogClient) Stream(req *http.Request, meta RequestContext) (*http.Response, *Stream, error) {
+	fmt.Printf("%#v\n", meta)
+	return c.Client.Stream(req, meta)
 }
 
 type HelloClient struct{}
 
 // getClient returns the default HTTP client.
 func (c *HelloClient) getClient() Client {
-	return &DefaultClient{
-		Client: http.DefaultClient,
-		Scheme: "http",
-		Host:   "127.0.0.1:9090",
+	return &LogClient{
+		Client: &DefaultClient{
+			Client: http.DefaultClient,
+			Scheme: "http",
+			Host:   "127.0.0.1:9090",
+		},
 	}
 }
 
@@ -56,14 +68,15 @@ type HelloResponse struct {
 
 // Hello sends a GET request to the /v1/hello endpoint with the given request body.
 func (c *HelloClient) Hello(ctx context.Context, req *HelloRequest, opts ...RequestOption) (*http.Response, *HelloResponse, error) {
-	url := fmt.Sprintf("/v1/hello?name=%s", req.Name)
+	path := "/v1/hello"
+	url := fmt.Sprintf("%s?name=%s", path, req.Name)
 	httpReq, err := NewRequest(ctx, "GET", url, FORM, nil)
 	if err != nil {
 		return nil, nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	httpReq.Header.Set("Accept", "application/json")
-	return JSONResponse[HelloResponse](c.getClient(), httpReq, opts...)
+	return JSONResponse[HelloResponse](c.getClient(), httpReq, path, opts...)
 }
 
 type StreamRequest struct {
@@ -72,14 +85,15 @@ type StreamRequest struct {
 
 // Stream sends a POST request to the /v1/stream endpoint with the given request body.
 func (c *HelloClient) Stream(ctx context.Context, req *StreamRequest, opts ...RequestOption) (*http.Response, *Stream, error) {
-	url := fmt.Sprintf("/v1/stream")
+	path := "/v1/stream"
+	url := fmt.Sprintf("%s", path)
 	httpReq, err := NewRequest(ctx, "POST", url, JSON, req)
 	if err != nil {
 		return nil, nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "text/event-stream")
-	return StreamResponse(c.getClient(), httpReq, opts...)
+	return StreamResponse(c.getClient(), httpReq, path, opts...)
 }
 
 func TestHello(t *testing.T) {

@@ -110,7 +110,6 @@ func (s *Stream) send(msg Message) bool {
 
 // RequestContext holds the context information for an HTTP request.
 type RequestContext struct {
-	Func   string
 	Path   string
 	Header http.Header
 	Config map[string]string
@@ -118,6 +117,20 @@ type RequestContext struct {
 
 // RequestOption is a function type that modifies the RequestContext.
 type RequestOption func(info *RequestContext)
+
+// SetHeader sets the given http.Header to the RequestContext.
+func SetHeader(header http.Header) RequestOption {
+	return func(meta *RequestContext) {
+		maps.Copy(meta.Header, header)
+	}
+}
+
+// SetConfig sets the given map to the RequestContext.
+func SetConfig(config map[string]string) RequestOption {
+	return func(meta *RequestContext) {
+		maps.Copy(meta.Config, config)
+	}
+}
 
 // Client defines a customizable HTTP executor interface.
 // Implementing this interface allows users to provide their own
@@ -221,8 +234,8 @@ func NewRequest(ctx context.Context, method string, url string, p Protocol, body
 
 // JSONResponse executes the given HTTP request using the provided Client,
 // reads the response body, and unmarshal it into a value of type RespType.
-func JSONResponse[RespType any](c Client, r *http.Request, opts ...RequestOption) (*http.Response, *RespType, error) {
-	var meta RequestContext
+func JSONResponse[RespType any](c Client, r *http.Request, path string, opts ...RequestOption) (*http.Response, *RespType, error) {
+	meta := RequestContext{Path: path}
 	for _, opt := range opts {
 		opt(&meta)
 	}
@@ -239,8 +252,8 @@ func JSONResponse[RespType any](c Client, r *http.Request, opts ...RequestOption
 
 // StreamResponse executes the given HTTP request using the provided Client,
 // and returns a Stream instance for streaming the response body.
-func StreamResponse(c Client, r *http.Request, opts ...RequestOption) (*http.Response, *Stream, error) {
-	var meta RequestContext
+func StreamResponse(c Client, r *http.Request, path string, opts ...RequestOption) (*http.Response, *Stream, error) {
+	meta := RequestContext{Path: path}
 	for _, opt := range opts {
 		opt(&meta)
 	}
