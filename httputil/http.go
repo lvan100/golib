@@ -108,12 +108,23 @@ func (s *Stream) send(msg Message) bool {
 	}
 }
 
+// RequestContext holds the context information for an HTTP request.
+type RequestContext struct {
+	Func   string
+	Path   string
+	Header http.Header
+	Config map[string]string
+}
+
+// RequestOption is a function type that modifies the RequestContext.
+type RequestOption func(info *RequestContext)
+
 // Client defines a customizable HTTP executor interface.
 // Implementing this interface allows users to provide their own
 // HTTP execution logic (for example, to add retry, logging, or tracing).
 type Client interface {
-	JSON(req *http.Request) (*http.Response, []byte, error)
-	Stream(req *http.Request) (*http.Response, *Stream, error)
+	JSON(req *http.Request, meta RequestContext) (*http.Response, []byte, error)
+	Stream(req *http.Request, meta RequestContext) (*http.Response, *Stream, error)
 }
 
 var _ Client = (*DefaultClient)(nil)
@@ -134,10 +145,11 @@ type DefaultClient struct {
 // it can be read again by the caller if needed.
 //
 // Note: For very large responses, this may be memory intensive.
-func (c *DefaultClient) JSON(r *http.Request) (*http.Response, []byte, error) {
+func (c *DefaultClient) JSON(r *http.Request, meta RequestContext) (*http.Response, []byte, error) {
 	r.Host = c.Host
 	r.URL.Host = c.Host
 	r.URL.Scheme = c.Scheme
+	maps.Copy(r.Header, meta.Header)
 
 	resp, err := c.Client.Do(r)
 	if err != nil {
@@ -156,10 +168,11 @@ func (c *DefaultClient) JSON(r *http.Request) (*http.Response, []byte, error) {
 
 // Stream executes an HTTP request and continuously reads lines from the response body.
 // Each line is sent into the returned Stream channel asynchronously.
-func (c *DefaultClient) Stream(r *http.Request) (*http.Response, *Stream, error) {
+func (c *DefaultClient) Stream(r *http.Request, meta RequestContext) (*http.Response, *Stream, error) {
 	r.Host = c.Host
 	r.URL.Host = c.Host
 	r.URL.Scheme = c.Scheme
+	maps.Copy(r.Header, meta.Header)
 
 	resp, err := c.Client.Do(r)
 	if err != nil {
@@ -188,18 +201,6 @@ func (c *DefaultClient) Stream(r *http.Request) (*http.Response, *Stream, error)
 	return resp, respStream, nil
 }
 
-var headerKey struct{}
-
-// AttachHeader attaches a http.Header to the given context.
-func AttachHeader(ctx context.Context) (http.Header, context.Context) {
-	v, _ := ctx.Value(&headerKey).(http.Header)
-	if v == nil {
-		v = http.Header{}
-		ctx = context.WithValue(ctx, &headerKey, v)
-	}
-	return v, ctx
-}
-
 // NewRequest creates a new HTTP request with the given context, method,
 // URL, protocol encoder, and request body.
 func NewRequest(ctx context.Context, method string, url string, p Protocol, body any) (*http.Request, error) {
@@ -215,15 +216,17 @@ func NewRequest(ctx context.Context, method string, url string, p Protocol, body
 	if err != nil {
 		return nil, err
 	}
-	headers, _ := AttachHeader(ctx)
-	maps.Copy(req.Header, headers)
 	return req, nil
 }
 
 // JSONResponse executes the given HTTP request using the provided Client,
 // reads the response body, and unmarshal it into a value of type RespType.
-func JSONResponse[RespType any](c Client, r *http.Request) (*http.Response, *RespType, error) {
-	resp, b, err := c.JSON(r)
+func JSONResponse[RespType any](c Client, r *http.Request, opts ...RequestOption) (*http.Response, *RespType, error) {
+	var meta RequestContext
+	for _, opt := range opts {
+		opt(&meta)
+	}
+	resp, b, err := c.JSON(r, meta)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -232,4 +235,14 @@ func JSONResponse[RespType any](c Client, r *http.Request) (*http.Response, *Res
 		return nil, nil, err
 	}
 	return resp, &ret, nil
+}
+
+// StreamResponse executes the given HTTP request using the provided Client,
+// and returns a Stream instance for streaming the response body.
+func StreamResponse(c Client, r *http.Request, opts ...RequestOption) (*http.Response, *Stream, error) {
+	var meta RequestContext
+	for _, opt := range opts {
+		opt(&meta)
+	}
+	return c.Stream(r, meta)
 }

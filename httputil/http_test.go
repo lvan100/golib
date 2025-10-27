@@ -28,6 +28,13 @@ import (
 	"github.com/lvan100/golib/testing/assert"
 )
 
+// SetHeader sets the given http.Header to the RequestContext.
+func SetHeader(header http.Header) RequestOption {
+	return func(meta *RequestContext) {
+		meta.Header = header
+	}
+}
+
 type HelloClient struct{}
 
 // getClient returns the default HTTP client.
@@ -48,7 +55,7 @@ type HelloResponse struct {
 }
 
 // Hello sends a GET request to the /v1/hello endpoint with the given request body.
-func (c *HelloClient) Hello(ctx context.Context, req *HelloRequest) (*http.Response, *HelloResponse, error) {
+func (c *HelloClient) Hello(ctx context.Context, req *HelloRequest, opts ...RequestOption) (*http.Response, *HelloResponse, error) {
 	url := fmt.Sprintf("/v1/hello?name=%s", req.Name)
 	httpReq, err := NewRequest(ctx, "GET", url, FORM, nil)
 	if err != nil {
@@ -56,7 +63,7 @@ func (c *HelloClient) Hello(ctx context.Context, req *HelloRequest) (*http.Respo
 	}
 	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	httpReq.Header.Set("Accept", "application/json")
-	return JSONResponse[HelloResponse](c.getClient(), httpReq)
+	return JSONResponse[HelloResponse](c.getClient(), httpReq, opts...)
 }
 
 type StreamRequest struct {
@@ -64,7 +71,7 @@ type StreamRequest struct {
 }
 
 // Stream sends a POST request to the /v1/stream endpoint with the given request body.
-func (c *HelloClient) Stream(ctx context.Context, req *StreamRequest) (*http.Response, *Stream, error) {
+func (c *HelloClient) Stream(ctx context.Context, req *StreamRequest, opts ...RequestOption) (*http.Response, *Stream, error) {
 	url := fmt.Sprintf("/v1/stream")
 	httpReq, err := NewRequest(ctx, "POST", url, JSON, req)
 	if err != nil {
@@ -72,7 +79,7 @@ func (c *HelloClient) Stream(ctx context.Context, req *StreamRequest) (*http.Res
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "text/event-stream")
-	return c.getClient().Stream(httpReq)
+	return StreamResponse(c.getClient(), httpReq, opts...)
 }
 
 func TestHello(t *testing.T) {
@@ -90,11 +97,11 @@ func TestHello(t *testing.T) {
 	}()
 	time.Sleep(time.Millisecond * 100)
 
-	h, ctx := AttachHeader(context.Background())
+	h := http.Header{}
 	h.Set("X-Request-ID", "12345678")
 
 	client := &HelloClient{}
-	_, data, err := client.Hello(ctx, &HelloRequest{Name: "world"})
+	_, data, err := client.Hello(context.Background(), &HelloRequest{Name: "world"}, SetHeader(h))
 	assert.Error(t, err).Nil()
 	assert.That(t, data).Equal(&HelloResponse{Message: "hello world"})
 
@@ -125,11 +132,11 @@ func TestStream(t *testing.T) {
 	}()
 	time.Sleep(time.Millisecond * 100)
 
-	h, ctx := AttachHeader(context.Background())
+	h := http.Header{}
 	h.Set("X-Request-ID", "12345678")
 
 	client := &HelloClient{}
-	_, resp, err := client.Stream(ctx, &StreamRequest{Prompt: "hello"})
+	_, resp, err := client.Stream(context.Background(), &StreamRequest{Prompt: "hello"}, SetHeader(h))
 	defer resp.Close()
 	assert.Error(t, err).Nil()
 
