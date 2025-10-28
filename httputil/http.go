@@ -134,7 +134,7 @@ func SetConfig(config map[string]string) RequestOption {
 
 // Transport defines a customizable HTTP transport interface.
 type Transport interface {
-	GetConn(service, schema string) Connection
+	GetConn(target, schema string) Connection
 }
 
 // Connection defines a customizable HTTP executor interface.
@@ -152,20 +152,20 @@ var _ Connection = (*DefaultConnection)(nil)
 type DefaultTransport struct{}
 
 // GetConn returns the default connection for the transport.
-func (f *DefaultTransport) GetConn(service, schema string) Connection {
+func (f *DefaultTransport) GetConn(target, schema string) Connection {
 	return &DefaultConnection{
-		Client:  http.DefaultClient,
-		Service: service,
-		Scheme:  schema,
+		Client: http.DefaultClient,
+		Target: target,
+		Scheme: schema,
 	}
 }
 
 // DefaultConnection is the default implementation of Connection,
 // which delegates to the standard library http.Client.
 type DefaultConnection struct {
-	Client  *http.Client
-	Service string
-	Scheme  string
+	Client *http.Client
+	Target string
+	Scheme string
 }
 
 // JSON executes the HTTP request using the embedded http.Client.
@@ -177,8 +177,8 @@ type DefaultConnection struct {
 //
 // Note: For very large responses, this may be memory intensive.
 func (c *DefaultConnection) JSON(r *http.Request, meta RequestContext) (*http.Response, []byte, error) {
-	r.Host = c.Service
-	r.URL.Host = c.Service
+	r.Host = c.Target
+	r.URL.Host = c.Target
 	r.URL.Scheme = c.Scheme
 	maps.Copy(r.Header, meta.Header)
 
@@ -200,8 +200,8 @@ func (c *DefaultConnection) JSON(r *http.Request, meta RequestContext) (*http.Re
 // Stream executes an HTTP request and continuously reads lines from the response body.
 // Each line is sent into the returned Stream channel asynchronously.
 func (c *DefaultConnection) Stream(r *http.Request, meta RequestContext) (*http.Response, *Stream, error) {
-	r.Host = c.Service
-	r.URL.Host = c.Service
+	r.Host = c.Target
+	r.URL.Host = c.Target
 	r.URL.Scheme = c.Scheme
 	maps.Copy(r.Header, meta.Header)
 

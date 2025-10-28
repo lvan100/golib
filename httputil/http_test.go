@@ -32,9 +32,9 @@ type LogTransport struct {
 	DefaultTransport
 }
 
-func (c *LogTransport) GetConn(service, schema string) Connection {
+func (c *LogTransport) GetConn(target, schema string) Connection {
 	return &LogConnection{
-		Connection: c.DefaultTransport.GetConn(service, schema),
+		Connection: c.DefaultTransport.GetConn(target, schema),
 	}
 }
 
@@ -56,7 +56,7 @@ func (c *LogConnection) Stream(req *http.Request, meta RequestContext) (*http.Re
 
 type HelloClient struct {
 	Transport
-	Service string
+	ServiceName string
 }
 
 type HelloRequest struct {
@@ -77,7 +77,7 @@ func (c *HelloClient) Hello(ctx context.Context, req *HelloRequest, opts ...Requ
 	}
 	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	httpReq.Header.Set("Accept", "application/json")
-	conn := c.GetConn(c.Service, "http")
+	conn := c.GetConn(c.ServiceName, "http")
 	return JSONResponse[HelloResponse](conn, httpReq, path, opts...)
 }
 
@@ -95,7 +95,7 @@ func (c *HelloClient) Stream(ctx context.Context, req *StreamRequest, opts ...Re
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "text/event-stream")
-	conn := c.GetConn(c.Service, "http")
+	conn := c.GetConn(c.ServiceName, "http")
 	return StreamResponse(conn, httpReq, path, opts...)
 }
 
@@ -118,8 +118,8 @@ func TestHello(t *testing.T) {
 	h.Set("X-Request-ID", "12345678")
 
 	client := &HelloClient{
-		Transport: &LogTransport{},
-		Service:   "127.0.0.1:9090",
+		Transport:   &LogTransport{},
+		ServiceName: "127.0.0.1:9090",
 	}
 
 	_, data, err := client.Hello(context.Background(), &HelloRequest{Name: "world"}, SetHeader(h))
@@ -157,8 +157,8 @@ func TestStream(t *testing.T) {
 	h.Set("X-Request-ID", "12345678")
 
 	client := &HelloClient{
-		Transport: &LogTransport{},
-		Service:   "127.0.0.1:9090",
+		Transport:   &LogTransport{},
+		ServiceName: "127.0.0.1:9090",
 	}
 
 	_, resp, err := client.Stream(context.Background(), &StreamRequest{Prompt: "hello"}, SetHeader(h))
