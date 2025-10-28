@@ -118,15 +118,15 @@ type RequestContext struct {
 // RequestOption is a function type that modifies the RequestContext.
 type RequestOption func(info *RequestContext)
 
-// SetHeader sets the given http.Header to the RequestContext.
-func SetHeader(header http.Header) RequestOption {
+// WithHeader sets the given http.Header to the RequestContext.
+func WithHeader(header http.Header) RequestOption {
 	return func(meta *RequestContext) {
 		maps.Copy(meta.Header, header)
 	}
 }
 
-// SetConfig sets the given map to the RequestContext.
-func SetConfig(config map[string]string) RequestOption {
+// WithConfig sets the given map to the RequestContext.
+func WithConfig(config map[string]string) RequestOption {
 	return func(meta *RequestContext) {
 		maps.Copy(meta.Config, config)
 	}

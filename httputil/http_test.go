@@ -122,7 +122,7 @@ func TestHello(t *testing.T) {
 		ServiceName: "127.0.0.1:9090",
 	}
 
-	_, data, err := client.Hello(context.Background(), &HelloRequest{Name: "world"}, SetHeader(h))
+	_, data, err := client.Hello(context.Background(), &HelloRequest{Name: "world"}, WithHeader(h))
 	assert.Error(t, err).Nil()
 	assert.That(t, data).Equal(&HelloResponse{Message: "hello world"})
 
@@ -161,7 +161,7 @@ func TestStream(t *testing.T) {
 		ServiceName: "127.0.0.1:9090",
 	}
 
-	_, resp, err := client.Stream(context.Background(), &StreamRequest{Prompt: "hello"}, SetHeader(h))
+	_, resp, err := client.Stream(context.Background(), &StreamRequest{Prompt: "hello"}, WithHeader(h))
 	defer resp.Close()
 	assert.Error(t, err).Nil()
 
