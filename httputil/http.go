@@ -134,7 +134,7 @@ func SetConfig(config map[string]string) RequestOption {
 
 // Transport defines a customizable HTTP transport interface.
 type Transport interface {
-	GetConn() Connection
+	GetConn(service, schema string) Connection
 }
 
 // Connection defines a customizable HTTP executor interface.
@@ -152,16 +152,20 @@ var _ Connection = (*DefaultConnection)(nil)
 type DefaultTransport struct{}
 
 // GetConn returns the default connection for the transport.
-func (f *DefaultTransport) GetConn() Connection {
+func (f *DefaultTransport) GetConn(service, schema string) Connection {
 	return &DefaultConnection{
-		Client: http.DefaultClient,
+		Client:  http.DefaultClient,
+		Service: service,
+		Scheme:  schema,
 	}
 }
 
 // DefaultConnection is the default implementation of Connection,
 // which delegates to the standard library http.Client.
 type DefaultConnection struct {
-	Client *http.Client
+	Client  *http.Client
+	Service string
+	Scheme  string
 }
 
 // JSON executes the HTTP request using the embedded http.Client.
@@ -173,9 +177,9 @@ type DefaultConnection struct {
 //
 // Note: For very large responses, this may be memory intensive.
 func (c *DefaultConnection) JSON(r *http.Request, meta RequestContext) (*http.Response, []byte, error) {
-	r.Host = c.Host
-	r.URL.Host = c.Host
-	r.URL.Scheme = "http"
+	r.Host = c.Service
+	r.URL.Host = c.Service
+	r.URL.Scheme = c.Scheme
 	maps.Copy(r.Header, meta.Header)
 
 	resp, err := c.Client.Do(r)
@@ -196,9 +200,9 @@ func (c *DefaultConnection) JSON(r *http.Request, meta RequestContext) (*http.Re
 // Stream executes an HTTP request and continuously reads lines from the response body.
 // Each line is sent into the returned Stream channel asynchronously.
 func (c *DefaultConnection) Stream(r *http.Request, meta RequestContext) (*http.Response, *Stream, error) {
-	r.Host = c.Host
-	r.URL.Host = c.Host
-	r.URL.Scheme = "http"
+	r.Host = c.Service
+	r.URL.Host = c.Service
+	r.URL.Scheme = c.Scheme
 	maps.Copy(r.Header, meta.Header)
 
 	resp, err := c.Client.Do(r)
@@ -249,7 +253,11 @@ func NewRequest(ctx context.Context, method string, url string, p Protocol, body
 // JSONResponse executes the given HTTP request using the provided Connection,
 // reads the response body, and unmarshal it into a value of type RespType.
 func JSONResponse[RespType any](c Connection, r *http.Request, path string, opts ...RequestOption) (*http.Response, *RespType, error) {
-	meta := RequestContext{Path: path}
+	meta := RequestContext{
+		Path:   path,
+		Header: http.Header{},
+		Config: map[string]string{},
+	}
 	for _, opt := range opts {
 		opt(&meta)
 	}
@@ -267,7 +275,11 @@ func JSONResponse[RespType any](c Connection, r *http.Request, path string, opts
 // StreamResponse executes the given HTTP request using the provided Connection,
 // and returns a Stream instance for streaming the response body.
 func StreamResponse(c Connection, r *http.Request, path string, opts ...RequestOption) (*http.Response, *Stream, error) {
-	meta := RequestContext{Path: path}
+	meta := RequestContext{
+		Path:   path,
+		Header: http.Header{},
+		Config: map[string]string{},
+	}
 	for _, opt := range opts {
 		opt(&meta)
 	}

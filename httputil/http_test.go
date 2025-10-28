@@ -32,9 +32,9 @@ type LogTransport struct {
 	DefaultTransport
 }
 
-func (c *LogTransport) GetConn() Connection {
+func (c *LogTransport) GetConn(service, schema string) Connection {
 	return &LogConnection{
-		Connection: c.DefaultTransport.GetConn(),
+		Connection: c.DefaultTransport.GetConn(service, schema),
 	}
 }
 
@@ -56,6 +56,7 @@ func (c *LogConnection) Stream(req *http.Request, meta RequestContext) (*http.Re
 
 type HelloClient struct {
 	Transport
+	Service string
 }
 
 type HelloRequest struct {
@@ -76,7 +77,8 @@ func (c *HelloClient) Hello(ctx context.Context, req *HelloRequest, opts ...Requ
 	}
 	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	httpReq.Header.Set("Accept", "application/json")
-	return JSONResponse[HelloResponse](c.GetConn(), httpReq, path, opts...)
+	conn := c.GetConn(c.Service, "http")
+	return JSONResponse[HelloResponse](conn, httpReq, path, opts...)
 }
 
 type StreamRequest struct {
@@ -93,7 +95,8 @@ func (c *HelloClient) Stream(ctx context.Context, req *StreamRequest, opts ...Re
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "text/event-stream")
-	return StreamResponse(c.GetConn(), httpReq, path, opts...)
+	conn := c.GetConn(c.Service, "http")
+	return StreamResponse(conn, httpReq, path, opts...)
 }
 
 func TestHello(t *testing.T) {
@@ -114,7 +117,11 @@ func TestHello(t *testing.T) {
 	h := http.Header{}
 	h.Set("X-Request-ID", "12345678")
 
-	client := &HelloClient{Transport: &LogTransport{}}
+	client := &HelloClient{
+		Transport: &LogTransport{},
+		Service:   "127.0.0.1:9090",
+	}
+
 	_, data, err := client.Hello(context.Background(), &HelloRequest{Name: "world"}, SetHeader(h))
 	assert.Error(t, err).Nil()
 	assert.That(t, data).Equal(&HelloResponse{Message: "hello world"})
@@ -149,7 +156,11 @@ func TestStream(t *testing.T) {
 	h := http.Header{}
 	h.Set("X-Request-ID", "12345678")
 
-	client := &HelloClient{Transport: &LogTransport{}}
+	client := &HelloClient{
+		Transport: &LogTransport{},
+		Service:   "127.0.0.1:9090",
+	}
+
 	_, resp, err := client.Stream(context.Background(), &StreamRequest{Prompt: "hello"}, SetHeader(h))
 	defer resp.Close()
 	assert.Error(t, err).Nil()
