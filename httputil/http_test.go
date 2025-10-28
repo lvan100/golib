@@ -28,34 +28,34 @@ import (
 	"github.com/lvan100/golib/testing/assert"
 )
 
-// LogClient is Client that logs the request and response.
-type LogClient struct {
-	Client
+type LogTransport struct {
+	DefaultTransport
+}
+
+func (c *LogTransport) GetConn() Connection {
+	return &LogConnection{
+		Connection: c.DefaultTransport.GetConn(),
+	}
+}
+
+type LogConnection struct {
+	Connection
 }
 
 // JSON executes the given HTTP request using the provided Client.
-func (c *LogClient) JSON(req *http.Request, meta RequestContext) (*http.Response, []byte, error) {
+func (c *LogConnection) JSON(req *http.Request, meta RequestContext) (*http.Response, []byte, error) {
 	fmt.Printf("%#v\n", meta)
-	return c.Client.JSON(req, meta)
+	return c.Connection.JSON(req, meta)
 }
 
 // Stream executes the given HTTP request using the provided Client.
-func (c *LogClient) Stream(req *http.Request, meta RequestContext) (*http.Response, *Stream, error) {
+func (c *LogConnection) Stream(req *http.Request, meta RequestContext) (*http.Response, *Stream, error) {
 	fmt.Printf("%#v\n", meta)
-	return c.Client.Stream(req, meta)
+	return c.Connection.Stream(req, meta)
 }
 
-type HelloClient struct{}
-
-// getClient returns the default HTTP client.
-func (c *HelloClient) getClient() Client {
-	return &LogClient{
-		Client: &DefaultClient{
-			Client: http.DefaultClient,
-			Scheme: "http",
-			Host:   "127.0.0.1:9090",
-		},
-	}
+type HelloClient struct {
+	Transport
 }
 
 type HelloRequest struct {
@@ -76,7 +76,7 @@ func (c *HelloClient) Hello(ctx context.Context, req *HelloRequest, opts ...Requ
 	}
 	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	httpReq.Header.Set("Accept", "application/json")
-	return JSONResponse[HelloResponse](c.getClient(), httpReq, path, opts...)
+	return JSONResponse[HelloResponse](c.GetConn(), httpReq, path, opts...)
 }
 
 type StreamRequest struct {
@@ -93,7 +93,7 @@ func (c *HelloClient) Stream(ctx context.Context, req *StreamRequest, opts ...Re
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "text/event-stream")
-	return StreamResponse(c.getClient(), httpReq, path, opts...)
+	return StreamResponse(c.GetConn(), httpReq, path, opts...)
 }
 
 func TestHello(t *testing.T) {
@@ -114,7 +114,7 @@ func TestHello(t *testing.T) {
 	h := http.Header{}
 	h.Set("X-Request-ID", "12345678")
 
-	client := &HelloClient{}
+	client := &HelloClient{Transport: &LogTransport{}}
 	_, data, err := client.Hello(context.Background(), &HelloRequest{Name: "world"}, SetHeader(h))
 	assert.Error(t, err).Nil()
 	assert.That(t, data).Equal(&HelloResponse{Message: "hello world"})
@@ -149,7 +149,7 @@ func TestStream(t *testing.T) {
 	h := http.Header{}
 	h.Set("X-Request-ID", "12345678")
 
-	client := &HelloClient{}
+	client := &HelloClient{Transport: &LogTransport{}}
 	_, resp, err := client.Stream(context.Background(), &StreamRequest{Prompt: "hello"}, SetHeader(h))
 	defer resp.Close()
 	assert.Error(t, err).Nil()

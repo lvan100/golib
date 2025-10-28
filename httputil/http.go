@@ -132,22 +132,36 @@ func SetConfig(config map[string]string) RequestOption {
 	}
 }
 
-// Client defines a customizable HTTP executor interface.
+// Transport defines a customizable HTTP transport interface.
+type Transport interface {
+	GetConn() Connection
+}
+
+// Connection defines a customizable HTTP executor interface.
 // Implementing this interface allows users to provide their own
 // HTTP execution logic (for example, to add retry, logging, or tracing).
-type Client interface {
+type Connection interface {
 	JSON(req *http.Request, meta RequestContext) (*http.Response, []byte, error)
 	Stream(req *http.Request, meta RequestContext) (*http.Response, *Stream, error)
 }
 
-var _ Client = (*DefaultClient)(nil)
+var _ Transport = (*DefaultTransport)(nil)
+var _ Connection = (*DefaultConnection)(nil)
 
-// DefaultClient is the default implementation of Client,
+// DefaultTransport is the default implementation of Transport,
+type DefaultTransport struct{}
+
+// GetConn returns the default connection for the transport.
+func (f *DefaultTransport) GetConn() Connection {
+	return &DefaultConnection{
+		Client: http.DefaultClient,
+	}
+}
+
+// DefaultConnection is the default implementation of Connection,
 // which delegates to the standard library http.Client.
-type DefaultClient struct {
+type DefaultConnection struct {
 	Client *http.Client
-	Scheme string
-	Host   string
 }
 
 // JSON executes the HTTP request using the embedded http.Client.
@@ -158,10 +172,10 @@ type DefaultClient struct {
 // it can be read again by the caller if needed.
 //
 // Note: For very large responses, this may be memory intensive.
-func (c *DefaultClient) JSON(r *http.Request, meta RequestContext) (*http.Response, []byte, error) {
+func (c *DefaultConnection) JSON(r *http.Request, meta RequestContext) (*http.Response, []byte, error) {
 	r.Host = c.Host
 	r.URL.Host = c.Host
-	r.URL.Scheme = c.Scheme
+	r.URL.Scheme = "http"
 	maps.Copy(r.Header, meta.Header)
 
 	resp, err := c.Client.Do(r)
@@ -181,10 +195,10 @@ func (c *DefaultClient) JSON(r *http.Request, meta RequestContext) (*http.Respon
 
 // Stream executes an HTTP request and continuously reads lines from the response body.
 // Each line is sent into the returned Stream channel asynchronously.
-func (c *DefaultClient) Stream(r *http.Request, meta RequestContext) (*http.Response, *Stream, error) {
+func (c *DefaultConnection) Stream(r *http.Request, meta RequestContext) (*http.Response, *Stream, error) {
 	r.Host = c.Host
 	r.URL.Host = c.Host
-	r.URL.Scheme = c.Scheme
+	r.URL.Scheme = "http"
 	maps.Copy(r.Header, meta.Header)
 
 	resp, err := c.Client.Do(r)
@@ -232,9 +246,9 @@ func NewRequest(ctx context.Context, method string, url string, p Protocol, body
 	return req, nil
 }
 
-// JSONResponse executes the given HTTP request using the provided Client,
+// JSONResponse executes the given HTTP request using the provided Connection,
 // reads the response body, and unmarshal it into a value of type RespType.
-func JSONResponse[RespType any](c Client, r *http.Request, path string, opts ...RequestOption) (*http.Response, *RespType, error) {
+func JSONResponse[RespType any](c Connection, r *http.Request, path string, opts ...RequestOption) (*http.Response, *RespType, error) {
 	meta := RequestContext{Path: path}
 	for _, opt := range opts {
 		opt(&meta)
@@ -250,9 +264,9 @@ func JSONResponse[RespType any](c Client, r *http.Request, path string, opts ...
 	return resp, &ret, nil
 }
 
-// StreamResponse executes the given HTTP request using the provided Client,
+// StreamResponse executes the given HTTP request using the provided Connection,
 // and returns a Stream instance for streaming the response body.
-func StreamResponse(c Client, r *http.Request, path string, opts ...RequestOption) (*http.Response, *Stream, error) {
+func StreamResponse(c Connection, r *http.Request, path string, opts ...RequestOption) (*http.Response, *Stream, error) {
 	meta := RequestContext{Path: path}
 	for _, opt := range opts {
 		opt(&meta)
