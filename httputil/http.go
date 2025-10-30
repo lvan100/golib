@@ -27,7 +27,22 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/spf13/cast"
 )
+
+// CanToString is a generic constraint that represents basic types
+// that can be converted to string.
+type CanToString interface {
+	~bool | ~int | ~int8 | ~int16 | ~int32 | ~int64 |
+		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 |
+		~uintptr | ~float32 | ~float64 | ~string
+}
+
+// ToString converts a value to a string.
+func ToString[T CanToString](v T) string {
+	return cast.ToString(v)
+}
 
 // Message represents a single message unit read from the stream.
 type Message struct {
@@ -252,14 +267,10 @@ func (c *SimpleConnection) Stream(r *http.Request, meta RequestContext) (*http.R
 
 // NewRequest creates a new HTTP request with the given context, method,
 // URL, protocol encoder, and request body.
-func NewRequest(ctx context.Context, method string, url string, p Protocol, body any) (*http.Request, error) {
+func NewRequest(ctx context.Context, method string, url string, body []byte) (*http.Request, error) {
 	var reader io.Reader
 	if body != nil {
-		b, err := p.Encode(body)
-		if err != nil {
-			return nil, err
-		}
-		reader = bytes.NewReader(b)
+		reader = bytes.NewReader(body)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, url, reader)
 	if err != nil {

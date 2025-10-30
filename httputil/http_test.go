@@ -19,6 +19,7 @@ package httputil
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -132,7 +133,7 @@ func (c *HelloClient) Hello(ctx context.Context, req *HelloRequest, opts ...Requ
 	// Encode an array of objects using repeated keys with JSON values
 	// e.g. items={"id":1,"name":"A"}&items={"id":2,"name":"B"}
 	for _, v := range req.ObjectSlice {
-		b, err := JSON.Encode(v)
+		b, err := json.Marshal(v)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -141,7 +142,7 @@ func (c *HelloClient) Hello(ctx context.Context, req *HelloRequest, opts ...Requ
 
 	// Encode maps or structs as JSON strings (e.g. data={"id":1,"name":"Alice"})
 	if req.Object != nil {
-		b, err := JSON.Encode(req.Object)
+		b, err := json.Marshal(req.Object)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -150,7 +151,7 @@ func (c *HelloClient) Hello(ctx context.Context, req *HelloRequest, opts ...Requ
 
 	// Encode maps or structs as JSON strings (e.g. data={"id":1,"name":"Alice"})
 	if req.StringObjectMap != nil {
-		b, err := JSON.Encode(req.StringObjectMap)
+		b, err := json.Marshal(req.StringObjectMap)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -159,7 +160,7 @@ func (c *HelloClient) Hello(ctx context.Context, req *HelloRequest, opts ...Requ
 
 	// Encode maps or structs as JSON strings (e.g. data={"id":1,"name":"Alice"})
 	if req.IntStringMap != nil {
-		b, err := JSON.Encode(req.IntStringMap)
+		b, err := json.Marshal(req.IntStringMap)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -168,7 +169,7 @@ func (c *HelloClient) Hello(ctx context.Context, req *HelloRequest, opts ...Requ
 
 	path := "/v1/hello"
 	urlPath := fmt.Sprintf("%s?%s", path, m.Encode())
-	httpReq, err := NewRequest(ctx, "GET", urlPath, FORM, nil)
+	httpReq, err := NewRequest(ctx, "GET", urlPath, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -219,7 +220,7 @@ func (c *HelloClient) Stream(ctx context.Context, req *StreamRequest, opts ...Re
 	// Encode slices using JSON array format (e.g., a=[1,2]),
 	// nil is omitted and not transmitted.
 	if req.IntSlice != nil {
-		b, err := JSON.Encode(req.IntSlice)
+		b, err := json.Marshal(req.IntSlice)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -229,7 +230,7 @@ func (c *HelloClient) Stream(ctx context.Context, req *StreamRequest, opts ...Re
 	// Encode slices using JSON array format (e.g., a=[1,2]),
 	// allowing nil to be encoded as null.
 	{
-		b, err := JSON.Encode(req.StringSlice)
+		b, err := json.Marshal(req.StringSlice)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -245,7 +246,7 @@ func (c *HelloClient) Stream(ctx context.Context, req *StreamRequest, opts ...Re
 	// e.g. items={"id":1,"name":"A"}&items={"id":2,"name":"B"},
 	// nil is omitted and not transmitted.
 	for _, v := range req.ObjectSlice {
-		b, err := JSON.Encode(v)
+		b, err := json.Marshal(v)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -255,7 +256,7 @@ func (c *HelloClient) Stream(ctx context.Context, req *StreamRequest, opts ...Re
 	// Encode maps or structs as JSON strings (e.g. data={"id":1,"name":"Alice"}),
 	// nil is omitted and not transmitted.
 	if req.Object != nil {
-		b, err := JSON.Encode(req.Object)
+		b, err := json.Marshal(req.Object)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -265,7 +266,7 @@ func (c *HelloClient) Stream(ctx context.Context, req *StreamRequest, opts ...Re
 	// Encode maps or structs as JSON strings (e.g. data={"id":1,"name":"Alice"}),
 	// nil is omitted and not transmitted.
 	if req.StringObjectMap != nil {
-		b, err := JSON.Encode(req.StringObjectMap)
+		b, err := json.Marshal(req.StringObjectMap)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -275,16 +276,22 @@ func (c *HelloClient) Stream(ctx context.Context, req *StreamRequest, opts ...Re
 	// Encode maps or structs as JSON strings (e.g. data={"id":1,"name":"Alice"}),
 	// allowing nil to be encoded as null.
 	{
-		b, err := JSON.Encode(req.IntStringMap)
+		b, err := json.Marshal(req.IntStringMap)
 		if err != nil {
 			return nil, nil, err
 		}
 		m.Add("int_string_map", string(b))
 	}
 
+	// Encode the request body using JSON.
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	path := "/v1/stream"
 	urlPath := fmt.Sprintf("%s?%s", path, m.Encode())
-	httpReq, err := NewRequest(ctx, "POST", urlPath, JSON, req)
+	httpReq, err := NewRequest(ctx, "POST", urlPath, body)
 	if err != nil {
 		return nil, nil, err
 	}
