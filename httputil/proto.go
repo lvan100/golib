@@ -22,6 +22,7 @@ import (
 	"strconv"
 
 	"github.com/lvan100/golib/ordered"
+	"github.com/spf13/cast"
 )
 
 var (
@@ -33,6 +34,19 @@ var (
 	// JSON encoding.
 	JSON Protocol = &JSONProtocol{}
 )
+
+// CanToString is a generic constraint that represents basic types
+// that can be converted to string.
+type CanToString interface {
+	~bool | ~int | ~int8 | ~int16 | ~int32 | ~int64 |
+		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 |
+		~uintptr | ~float32 | ~float64 | ~string
+}
+
+// ToString converts a value to a string.
+func ToString[T CanToString](v T) string {
+	return cast.ToString(v)
+}
 
 // Protocol defines a common interface for encoding and decoding data
 // into different serialization formats.
