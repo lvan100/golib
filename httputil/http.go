@@ -154,27 +154,35 @@ type Connection interface {
 	Stream(req *http.Request, meta RequestContext) (*http.Response, *Stream, error)
 }
 
-var _ Transport = (*DefaultTransport)(nil)
-var _ Connection = (*DefaultConnection)(nil)
+var _ Transport = (*SimpleTransport)(nil)
+var _ Connection = (*SimpleConnection)(nil)
 
-// DefaultTransport is the default implementation of Transport,
-type DefaultTransport struct{}
+// SimpleTransport is the default implementation of Transport,
+type SimpleTransport struct{}
 
 // GetConn returns the default connection for the transport.
-func (f *DefaultTransport) GetConn(target, schema string) Connection {
-	return &DefaultConnection{
+func (f *SimpleTransport) GetConn(target, schema string) Connection {
+	return &SimpleConnection{
 		Client: http.DefaultClient,
 		Target: target,
-		Scheme: schema,
 	}
 }
 
-// DefaultConnection is the default implementation of Connection,
+// SimpleConnection is the default implementation of Connection,
 // which delegates to the standard library http.Client.
-type DefaultConnection struct {
+// Target 只能是静态 ip:port 或者域名.Scheme 只能是 http.
+type SimpleConnection struct {
 	Client *http.Client
 	Target string
-	Scheme string
+}
+
+// do executes the given HTTP request using the embedded http.Client.
+func (c *SimpleConnection) do(r *http.Request, meta RequestContext) (*http.Response, error) {
+	r.Host = c.Target
+	r.URL.Host = c.Target
+	r.URL.Scheme = "http"
+	maps.Copy(r.Header, meta.Header)
+	return c.Client.Do(r)
 }
 
 // JSON executes the HTTP request using the embedded http.Client.
@@ -185,13 +193,8 @@ type DefaultConnection struct {
 // it can be read again by the caller if needed.
 //
 // Note: For very large responses, this may be memory intensive.
-func (c *DefaultConnection) JSON(r *http.Request, meta RequestContext) (*http.Response, []byte, error) {
-	r.Host = c.Target
-	r.URL.Host = c.Target
-	r.URL.Scheme = c.Scheme
-	maps.Copy(r.Header, meta.Header)
-
-	resp, err := c.Client.Do(r)
+func (c *SimpleConnection) JSON(r *http.Request, meta RequestContext) (*http.Response, []byte, error) {
+	resp, err := c.do(r, meta)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -208,10 +211,10 @@ func (c *DefaultConnection) JSON(r *http.Request, meta RequestContext) (*http.Re
 
 // Stream executes an HTTP request and continuously reads lines from the response body.
 // Each line is sent into the returned Stream channel asynchronously.
-func (c *DefaultConnection) Stream(r *http.Request, meta RequestContext) (*http.Response, *Stream, error) {
+func (c *SimpleConnection) Stream(r *http.Request, meta RequestContext) (*http.Response, *Stream, error) {
 	r.Host = c.Target
 	r.URL.Host = c.Target
-	r.URL.Scheme = c.Scheme
+	r.URL.Scheme = "http"
 	maps.Copy(r.Header, meta.Header)
 
 	resp, err := c.Client.Do(r)
