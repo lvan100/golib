@@ -31,16 +31,16 @@ import (
 	"github.com/spf13/cast"
 )
 
-// CanToString is a generic constraint that represents basic types
+// Stringable is a generic constraint that represents basic types
 // that can be converted to string.
-type CanToString interface {
+type Stringable interface {
 	~bool | ~int | ~int8 | ~int16 | ~int32 | ~int64 |
-		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 |
-		~uintptr | ~float32 | ~float64 | ~string
+	~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 |
+	~uintptr | ~float32 | ~float64 | ~string
 }
 
 // ToString converts a value to a string.
-func ToString[T CanToString](v T) string {
+func ToString[T Stringable](v T) string {
 	return cast.ToString(v)
 }
 
