@@ -143,7 +143,7 @@ func WithConfig(config map[string]string) RequestOption {
 
 // Transport defines a customizable HTTP transport interface.
 type Transport interface {
-	GetConn(target, schema string) Connection
+	GetConn(target, schema string) (Connection, error)
 }
 
 // Connection defines a customizable HTTP executor interface.
@@ -161,11 +161,11 @@ var _ Connection = (*SimpleConnection)(nil)
 type SimpleTransport struct{}
 
 // GetConn returns the default connection for the transport.
-func (f *SimpleTransport) GetConn(target, schema string) Connection {
+func (f *SimpleTransport) GetConn(target, schema string) (Connection, error) {
 	return &SimpleConnection{
 		Client: http.DefaultClient,
 		Target: target,
-	}
+	}, nil
 }
 
 // SimpleConnection is the default implementation of Connection,
@@ -212,12 +212,7 @@ func (c *SimpleConnection) JSON(r *http.Request, meta RequestContext) (*http.Res
 // Stream executes an HTTP request and continuously reads lines from the response body.
 // Each line is sent into the returned Stream channel asynchronously.
 func (c *SimpleConnection) Stream(r *http.Request, meta RequestContext) (*http.Response, *Stream, error) {
-	r.Host = c.Target
-	r.URL.Host = c.Target
-	r.URL.Scheme = "http"
-	maps.Copy(r.Header, meta.Header)
-
-	resp, err := c.Client.Do(r)
+	resp, err := c.do(r, meta)
 	if err != nil {
 		return nil, nil, err
 	}
