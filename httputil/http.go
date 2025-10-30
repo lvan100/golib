@@ -86,12 +86,16 @@ func (s *Stream) Next(ctx context.Context, timeout time.Duration) bool {
 		defer cancel()
 	}
 
+	var ok bool
 	select {
 	case <-ctx.Done():
 		s.curr.data = ""
 		s.curr.err = ctx.Err()
 		return false
-	case s.curr, _ = <-s.msgs:
+	case s.curr, ok = <-s.msgs:
+		if !ok {
+			return false
+		}
 		if s.curr.err != nil {
 			if s.curr.err == io.EOF {
 				s.curr.err = nil
@@ -130,6 +134,9 @@ type RequestOption func(info *RequestContext)
 // WithHeader sets the given http.Header to the RequestContext.
 func WithHeader(header http.Header) RequestOption {
 	return func(meta *RequestContext) {
+		if meta.Header == nil {
+			meta.Header = http.Header{}
+		}
 		maps.Copy(meta.Header, header)
 	}
 }
@@ -137,6 +144,9 @@ func WithHeader(header http.Header) RequestOption {
 // WithConfig sets the given map to the RequestContext.
 func WithConfig(config map[string]string) RequestOption {
 	return func(meta *RequestContext) {
+		if meta.Config == nil {
+			meta.Config = map[string]string{}
+		}
 		maps.Copy(meta.Config, config)
 	}
 }
