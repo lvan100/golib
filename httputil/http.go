@@ -143,41 +143,41 @@ func WithConfig(config map[string]string) RequestOption {
 
 // Transport defines a customizable HTTP transport interface.
 type Transport interface {
-	GetConn(target, schema string) (Connection, error)
+	GetConn(target, schema string) (Conn, error)
 }
 
-// Connection defines a customizable HTTP executor interface.
+// Conn defines a customizable HTTP executor interface.
 // Implementing this interface allows users to provide their own
 // HTTP execution logic (for example, to add retry, logging, or tracing).
-type Connection interface {
+type Conn interface {
 	JSON(req *http.Request, meta RequestContext) (*http.Response, []byte, error)
 	Stream(req *http.Request, meta RequestContext) (*http.Response, *Stream, error)
 }
 
 var _ Transport = (*SimpleTransport)(nil)
-var _ Connection = (*SimpleConnection)(nil)
+var _ Conn = (*SimpleConn)(nil)
 
 // SimpleTransport is the default implementation of Transport,
 type SimpleTransport struct{}
 
-// GetConn returns the default connection for the transport.
-func (f *SimpleTransport) GetConn(target, schema string) (Connection, error) {
-	return &SimpleConnection{
+// GetConn returns the default Conn for the transport.
+func (f *SimpleTransport) GetConn(target, schema string) (Conn, error) {
+	return &SimpleConn{
 		Client: http.DefaultClient,
 		Target: target,
 	}, nil
 }
 
-// SimpleConnection is the default implementation of Connection,
+// SimpleConn is the default implementation of Conn,
 // which delegates to the standard library http.Client.
 // Target 只能是静态 ip:port 或者域名.Scheme 只能是 http.
-type SimpleConnection struct {
+type SimpleConn struct {
 	Client *http.Client
 	Target string
 }
 
 // do executes the given HTTP request using the embedded http.Client.
-func (c *SimpleConnection) do(r *http.Request, meta RequestContext) (*http.Response, error) {
+func (c *SimpleConn) do(r *http.Request, meta RequestContext) (*http.Response, error) {
 	r.Host = c.Target
 	r.URL.Host = c.Target
 	r.URL.Scheme = "http"
@@ -193,7 +193,7 @@ func (c *SimpleConnection) do(r *http.Request, meta RequestContext) (*http.Respo
 // it can be read again by the caller if needed.
 //
 // Note: For very large responses, this may be memory intensive.
-func (c *SimpleConnection) JSON(r *http.Request, meta RequestContext) (*http.Response, []byte, error) {
+func (c *SimpleConn) JSON(r *http.Request, meta RequestContext) (*http.Response, []byte, error) {
 	resp, err := c.do(r, meta)
 	if err != nil {
 		return nil, nil, err
@@ -211,7 +211,7 @@ func (c *SimpleConnection) JSON(r *http.Request, meta RequestContext) (*http.Res
 
 // Stream executes an HTTP request and continuously reads lines from the response body.
 // Each line is sent into the returned Stream channel asynchronously.
-func (c *SimpleConnection) Stream(r *http.Request, meta RequestContext) (*http.Response, *Stream, error) {
+func (c *SimpleConn) Stream(r *http.Request, meta RequestContext) (*http.Response, *Stream, error) {
 	resp, err := c.do(r, meta)
 	if err != nil {
 		return nil, nil, err
@@ -257,9 +257,9 @@ func NewRequest(ctx context.Context, method string, url string, p Protocol, body
 	return req, nil
 }
 
-// JSONResponse executes the given HTTP request using the provided Connection,
+// JSONResponse executes the given HTTP request using the provided Conn,
 // reads the response body, and unmarshal it into a value of type RespType.
-func JSONResponse[RespType any](c Connection, r *http.Request, path string, opts ...RequestOption) (*http.Response, *RespType, error) {
+func JSONResponse[RespType any](c Conn, r *http.Request, path string, opts ...RequestOption) (*http.Response, *RespType, error) {
 	meta := RequestContext{
 		Path:   path,
 		Header: http.Header{},
@@ -279,9 +279,9 @@ func JSONResponse[RespType any](c Connection, r *http.Request, path string, opts
 	return resp, &ret, nil
 }
 
-// StreamResponse executes the given HTTP request using the provided Connection,
+// StreamResponse executes the given HTTP request using the provided Conn,
 // and returns a Stream instance for streaming the response body.
-func StreamResponse(c Connection, r *http.Request, path string, opts ...RequestOption) (*http.Response, *Stream, error) {
+func StreamResponse(c Conn, r *http.Request, path string, opts ...RequestOption) (*http.Response, *Stream, error) {
 	meta := RequestContext{
 		Path:   path,
 		Header: http.Header{},

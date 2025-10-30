@@ -37,33 +37,33 @@ func ptr[T any](v T) *T {
 
 // LogTransport is a Transport implementation that logs all requests and responses.
 type LogTransport struct {
-	Transport
+	SimpleTransport
 }
 
-// GetConn returns a 可以打印日志的 Connection instance for the given target and schema.
-func (c *LogTransport) GetConn(target, schema string) (Connection, error) {
-	conn, err := c.Transport.GetConn(target, schema)
+// GetConn returns a 可以打印日志的 Conn instance for the given target and schema.
+func (c *LogTransport) GetConn(target, schema string) (Conn, error) {
+	conn, err := c.SimpleTransport.GetConn(target, schema)
 	if err != nil {
 		return nil, err
 	}
-	return &LogConnection{Connection: conn}, nil
+	return &LogConn{Conn: conn}, nil
 }
 
-// LogConnection is a Connection implementation that logs all requests and responses.
-type LogConnection struct {
-	Connection
+// LogConn is a Conn implementation that logs all requests and responses.
+type LogConn struct {
+	Conn
 }
 
 // JSON executes the given HTTP request using the provided Client.
-func (c *LogConnection) JSON(req *http.Request, meta RequestContext) (*http.Response, []byte, error) {
+func (c *LogConn) JSON(req *http.Request, meta RequestContext) (*http.Response, []byte, error) {
 	fmt.Printf("%#v\n", meta)
-	return c.Connection.JSON(req, meta)
+	return c.Conn.JSON(req, meta)
 }
 
 // Stream executes the given HTTP request using the provided Client.
-func (c *LogConnection) Stream(req *http.Request, meta RequestContext) (*http.Response, *Stream, error) {
+func (c *LogConn) Stream(req *http.Request, meta RequestContext) (*http.Response, *Stream, error) {
 	fmt.Printf("%#v\n", meta)
-	return c.Connection.Stream(req, meta)
+	return c.Conn.Stream(req, meta)
 }
 
 type HelloClient struct {
