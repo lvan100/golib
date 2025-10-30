@@ -58,6 +58,16 @@ func TestReturnOnlyError(t *testing.T) {
 	assert.That(t, typeutil.ReturnOnlyError(reflect.TypeOf(func(int, string) error { return nil }))).True()
 }
 
+func fnNoArgs() {}
+
+func fnWithArgs(i int) {}
+
+type receiver struct{}
+
+func (r *receiver) ptrFnNoArgs() {}
+
+func (r *receiver) ptrFnWithArgs(i int) {}
+
 func TestIsConstructor(t *testing.T) {
 	assert.That(t, typeutil.IsConstructor(reflect.TypeFor[int]())).False()
 	assert.That(t, typeutil.IsConstructor(reflect.TypeOf(func() {}))).False()
