@@ -73,14 +73,21 @@ func (s *Stream) Error() error {
 
 // Next waits for the next data from the stream until timeout.
 // Returns true if a new data item is available, false otherwise.
-func (s *Stream) Next(timeout time.Duration) bool {
+func (s *Stream) Next(ctx context.Context, timeout time.Duration) bool {
 	if s.closed.Load() {
 		return false
 	}
+
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
 	select {
-	case <-time.After(timeout):
+	case <-ctx.Done():
 		s.curr.data = ""
-		s.curr.err = context.DeadlineExceeded
+		s.curr.err = ctx.Err()
 		return false
 	case s.curr, _ = <-s.msgs:
 		if s.curr.err != nil {
