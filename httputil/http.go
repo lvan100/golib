@@ -71,7 +71,8 @@ func (s *Stream) Error() error {
 	return s.curr.err
 }
 
-// Next waits for the next data from the stream until timeout.
+// Next waits for the next data from the stream,
+// respecting context cancellation and timeout.
 // Returns true if a new data item is available, false otherwise.
 func (s *Stream) Next(ctx context.Context, timeout time.Duration) bool {
 	if s.closed.Load() {
