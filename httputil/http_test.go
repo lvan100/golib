@@ -100,6 +100,7 @@ type HelloResponse struct {
 func (c *HelloClient) Hello(ctx context.Context, req *HelloRequest, opts ...RequestOption) (*http.Response, *HelloResponse, error) {
 	m := url.Values{}
 
+	// Encode scalar values using the key format (e.g. a=1)
 	m.Add("int", ToString(req.Int))
 	m.Add("string", ToString(req.String))
 	if req.IntPtr != nil {
@@ -117,7 +118,8 @@ func (c *HelloClient) Hello(ctx context.Context, req *HelloRequest, opts ...Requ
 	for _, v := range req.StringSlice {
 		m.Add("string_slice", ToString(v))
 	}
-	// Encode arrays using the repeated key format (e.g. a=1&a=2)
+
+	// Encode byte slices using base64 encoding (e.g., a=YWJj)
 	if req.ByteSlice != nil {
 		m.Add("byte_slice", base64.StdEncoding.EncodeToString(req.ByteSlice))
 	}
@@ -140,6 +142,7 @@ func (c *HelloClient) Hello(ctx context.Context, req *HelloRequest, opts ...Requ
 		}
 		m.Add("object", string(b))
 	}
+
 	// Encode maps or structs as JSON strings (e.g. data={"id":1,"name":"Alice"})
 	if req.StringObjectMap != nil {
 		b, err := JSON.Encode(req.StringObjectMap)
@@ -148,6 +151,7 @@ func (c *HelloClient) Hello(ctx context.Context, req *HelloRequest, opts ...Requ
 		}
 		m.Add("string_object_map", string(b))
 	}
+
 	// Encode maps or structs as JSON strings (e.g. data={"id":1,"name":"Alice"})
 	if req.IntStringMap != nil {
 		b, err := JSON.Encode(req.IntStringMap)
@@ -170,13 +174,108 @@ func (c *HelloClient) Hello(ctx context.Context, req *HelloRequest, opts ...Requ
 }
 
 type StreamRequest struct {
+	StreamRequestBody
+	Int             int               `json:"int" query:"int"`
+	String          string            `json:"string" query:"string"`
+	IntPtr          *int              `json:"int_ptr" query:"int_ptr"`
+	StringPtr       *string           `json:"string_ptr" query:"string_ptr"`
+	IntSlice        []int             `json:"int_slice" query:"int_slice"`
+	StringSlice     []string          `json:"string_slice" query:"string_slice"`
+	ByteSlice       []byte            `json:"byte_slice" query:"byte_slice"`
+	Object          *Object           `json:"object" query:"object"`
+	ObjectSlice     []Object          `json:"object_slice" query:"object_slice"`
+	IntStringMap    map[int]string    `json:"int_string_map" query:"int_string_map"`
+	StringObjectMap map[string]Object `json:"string_object_map" query:"string_object_map"`
+}
+
+type StreamRequestBody struct {
 	Prompt string `json:"prompt"`
 }
 
 // Stream sends a POST request to the /v1/stream endpoint with the given request body.
 func (c *HelloClient) Stream(ctx context.Context, req *StreamRequest, opts ...RequestOption) (*http.Response, *Stream, error) {
+	m := url.Values{}
+
+	// Encode scalar values using the key format (e.g. a=1).
+	m.Add("int", ToString(req.Int))
+	m.Add("string", ToString(req.String))
+	// Nil is omitted and not transmitted.
+	if req.IntPtr != nil {
+		m.Add("int_ptr", ToString(*req.IntPtr))
+	}
+	// Nil is omitted and not transmitted.
+	if req.StringPtr != nil {
+		m.Add("string_ptr", ToString(*req.StringPtr))
+	}
+
+	// Encode slices using JSON array format (e.g., a=[1,2]),
+	// nil is omitted and not transmitted.
+	if req.IntSlice != nil {
+		b, err := JSON.Encode(req.IntSlice)
+		if err != nil {
+			return nil, nil, err
+		}
+		m.Add("int_slice", string(b))
+	}
+
+	// Encode slices using JSON array format (e.g., a=[1,2]),
+	// allowing nil to be encoded as null.
+	{
+		b, err := JSON.Encode(req.StringSlice)
+		if err != nil {
+			return nil, nil, err
+		}
+		m.Add("string_slice", string(b))
+	}
+
+	// Encode byte slices using base64 encoding (e.g., a=YWJj).
+	if req.ByteSlice != nil {
+		m.Add("byte_slice", base64.StdEncoding.EncodeToString(req.ByteSlice))
+	}
+
+	// Encode an array of objects using repeated keys with JSON values
+	// e.g. items={"id":1,"name":"A"}&items={"id":2,"name":"B"},
+	// nil is omitted and not transmitted.
+	for _, v := range req.ObjectSlice {
+		b, err := JSON.Encode(v)
+		if err != nil {
+			return nil, nil, err
+		}
+		m.Add("object_slice", string(b))
+	}
+
+	// Encode maps or structs as JSON strings (e.g. data={"id":1,"name":"Alice"}),
+	// nil is omitted and not transmitted.
+	if req.Object != nil {
+		b, err := JSON.Encode(req.Object)
+		if err != nil {
+			return nil, nil, err
+		}
+		m.Add("object", string(b))
+	}
+
+	// Encode maps or structs as JSON strings (e.g. data={"id":1,"name":"Alice"}),
+	// nil is omitted and not transmitted.
+	if req.StringObjectMap != nil {
+		b, err := JSON.Encode(req.StringObjectMap)
+		if err != nil {
+			return nil, nil, err
+		}
+		m.Add("string_object_map", string(b))
+	}
+
+	// Encode maps or structs as JSON strings (e.g. data={"id":1,"name":"Alice"}),
+	// allowing nil to be encoded as null.
+	{
+		b, err := JSON.Encode(req.IntStringMap)
+		if err != nil {
+			return nil, nil, err
+		}
+		m.Add("int_string_map", string(b))
+	}
+
 	path := "/v1/stream"
-	urlPath := fmt.Sprintf("%s", path)
+	urlPath := fmt.Sprintf("%s?%s", path, m.Encode())
 	httpReq, err := NewRequest(ctx, "POST", urlPath, JSON, req)
 	if err != nil {
 		return nil, nil, err
@@ -254,6 +353,7 @@ func TestHello(t *testing.T) {
 
 func TestStream(t *testing.T) {
 	server := http.Server{Addr: ":9090", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println(r.URL.RawQuery)
 		_ = r.Header.Write(os.Stdout)
 		fmt.Println()
 		for i := range 5 {
@@ -283,7 +383,41 @@ func TestStream(t *testing.T) {
 		ServiceName: "127.0.0.1:9090",
 	}
 
-	_, resp, err := client.Stream(context.Background(), &StreamRequest{Prompt: "hello"}, WithHeader(h))
+	_, resp, err := client.Stream(context.Background(), &StreamRequest{
+		StreamRequestBody: StreamRequestBody{
+			Prompt: "hello world",
+		},
+		Int:       5,
+		String:    "world",
+		IntPtr:    ptr(10),
+		StringPtr: ptr("message"),
+		IntSlice:  []int{1, 2, 3},
+		ByteSlice: []byte("hello world"),
+		Object: &Object{
+			Item: &Item{ID: 1010},
+			Text: "message",
+		},
+		ObjectSlice: []Object{
+			{
+				Item: &Item{ID: 1010},
+				Text: "message",
+			},
+			{
+				Item: &Item{ID: 1010},
+				Text: "message",
+			},
+		},
+		StringObjectMap: map[string]Object{
+			"one": {
+				Item: &Item{ID: 1010},
+				Text: "message",
+			},
+			"two": {
+				Item: &Item{ID: 1010},
+				Text: "message",
+			},
+		},
+	}, WithHeader(h))
 	defer resp.Close()
 	assert.Error(t, err).Nil()
 
