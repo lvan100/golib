@@ -97,6 +97,7 @@ func (s *Stream) Next(ctx context.Context, timeout time.Duration) bool {
 			return false
 		}
 		if s.curr.err != nil {
+			// Treat io.EOF as normal stream termination
 			if s.curr.err == io.EOF {
 				s.curr.err = nil
 				return false
@@ -108,7 +109,7 @@ func (s *Stream) Next(ctx context.Context, timeout time.Duration) bool {
 }
 
 // send pushes a Message into the internal channel.
-// Returns false if the stream is closed or done.
+// Returns false if the stream is closed or already done.
 func (s *Stream) send(msg Message) bool {
 	if s.closed.Load() {
 		return false
@@ -121,7 +122,7 @@ func (s *Stream) send(msg Message) bool {
 	}
 }
 
-// RequestContext holds the context information for an HTTP request.
+// RequestContext holds contextual information for an HTTP request.
 type RequestContext struct {
 	Path   string
 	Header http.Header
@@ -131,7 +132,7 @@ type RequestContext struct {
 // RequestOption is a function type that modifies the RequestContext.
 type RequestOption func(info *RequestContext)
 
-// WithHeader sets the given http.Header to the RequestContext.
+// WithHeader sets the given HTTP headers to the RequestContext.
 func WithHeader(header http.Header) RequestOption {
 	return func(meta *RequestContext) {
 		if meta.Header == nil {
@@ -141,7 +142,7 @@ func WithHeader(header http.Header) RequestOption {
 	}
 }
 
-// WithConfig sets the given map to the RequestContext.
+// WithConfig sets the given configuration map to the RequestContext.
 func WithConfig(config map[string]string) RequestOption {
 	return func(meta *RequestContext) {
 		if meta.Config == nil {
@@ -167,10 +168,10 @@ type Connection interface {
 var _ Transport = (*SimpleTransport)(nil)
 var _ Connection = (*SimpleConnection)(nil)
 
-// SimpleTransport is the default implementation of Transport,
+// SimpleTransport is the default implementation of Transport.
 type SimpleTransport struct{}
 
-// GetConn returns the default connection for the transport.
+// GetConn returns a default connection for the transport.
 func (f *SimpleTransport) GetConn(target, schema string) (Connection, error) {
 	return &SimpleConnection{
 		Client: http.DefaultClient,
@@ -180,7 +181,7 @@ func (f *SimpleTransport) GetConn(target, schema string) (Connection, error) {
 
 // SimpleConnection is the default implementation of Connection,
 // which delegates to the standard library http.Client.
-// Target 只能是静态 ip:port 或者域名.Scheme 只能是 http.
+// Target must be a static IP:port or domain name.
 type SimpleConnection struct {
 	Client *http.Client
 	Target string
@@ -268,7 +269,7 @@ func NewRequest(ctx context.Context, method string, url string, p Protocol, body
 }
 
 // JSONResponse executes the given HTTP request using the provided Connection,
-// reads the response body, and unmarshal it into a value of type RespType.
+// reads the response body, and unmarshals it into a value of type RespType.
 func JSONResponse[RespType any](c Connection, r *http.Request, path string, opts ...RequestOption) (*http.Response, *RespType, error) {
 	meta := RequestContext{
 		Path:   path,
