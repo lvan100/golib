@@ -383,7 +383,8 @@ func TestStream(t *testing.T) {
 		ServiceName: "127.0.0.1:9090",
 	}
 
-	_, resp, err := client.Stream(context.Background(), &StreamRequest{
+	ctx := context.Background()
+	_, resp, err := client.Stream(ctx, &StreamRequest{
 		StreamRequestBody: StreamRequestBody{
 			Prompt: "hello world",
 		},
@@ -421,7 +422,7 @@ func TestStream(t *testing.T) {
 	defer resp.Close()
 	assert.Error(t, err).Nil()
 
-	for resp.Next(time.Second) {
+	for resp.Next(ctx, time.Second) {
 		fmt.Println(resp.Text())
 		//resp.Close()
 	}
