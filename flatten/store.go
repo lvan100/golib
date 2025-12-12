@@ -111,6 +111,22 @@ func NewStorage() *Storage {
 	}
 }
 
+// Keys returns all flattened keys currently stored in Storage,
+// sorted lexicographically for consistent iteration.
+func (s *Storage) Keys() []string {
+	return ordered.MapKeys(s.data)
+}
+
+// Data returns a simplified flattened key → string value mapping,
+// omitting file index information.
+func (s *Storage) Data() map[string]string {
+	m := make(map[string]string)
+	for k, v := range s.data {
+		m[k] = v.Value
+	}
+	return m
+}
+
 // RawData exposes the internal flattened key → ValueInfo mapping,
 // combining both data and empty containers if any exist.
 //
@@ -126,14 +142,9 @@ func (s *Storage) RawData() map[string]ValueInfo {
 	return s.data
 }
 
-// Data returns a simplified flattened key → string value mapping,
-// omitting file index information.
-func (s *Storage) Data() map[string]string {
-	m := make(map[string]string)
-	for k, v := range s.data {
-		m[k] = v.Value
-	}
-	return m
+// RawFile exposes the internal file name → index mapping.
+func (s *Storage) RawFile() map[string]int8 {
+	return s.file
 }
 
 // AddFile registers a file name in the Storage and assigns it
@@ -148,66 +159,33 @@ func (s *Storage) AddFile(file string) int8 {
 	return idx
 }
 
-// RawFile exposes the internal file name → index mapping.
-func (s *Storage) RawFile() map[string]int8 {
-	return s.file
+// Merge adds all key/value pairs from the given Storage to the Storage.
+func (s *Storage) Merge(p *Storage) error {
+	rawFile := p.RawFile()
+	newFiles := make(map[string]int8)
+	oldFiles := make([]string, len(rawFile))
+	for file, fileID := range rawFile {
+		newFiles[file] = s.AddFile(file)
+		oldFiles[fileID] = file
+	}
+	for key, r := range p.RawData() {
+		fileID := newFiles[oldFiles[r.File]]
+		if err := s.Set(key, r.Value, fileID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// Keys returns all flattened keys currently stored in Storage,
-// sorted lexicographically for consistent iteration.
-func (s *Storage) Keys() []string {
-	return ordered.MapKeys(s.data)
-}
-
-// SubKeys returns the immediate child keys under the given hierarchical path.
-//
-// For example, if Storage contains keys:
-//
-//	a.b.c
-//	a.b.d
-//
-// then SubKeys("a.b") returns ["c", "d"].
-//
-// If the path points to a leaf value or structural conflict, an error is returned.
-// If the path does not exist, it returns nil.
-func (s *Storage) SubKeys(key string) (_ []string, err error) {
-	var path []Path
-	if key != "" {
-		if path, err = SplitPath(key); err != nil {
-			return nil, err
+// MergeMap adds all key/value pairs from the given map to the Storage.
+func (s *Storage) MergeMap(data map[string]any, file string) error {
+	fileID := s.AddFile(file)
+	for key, val := range Flatten(data) {
+		if err := s.Set(key, val, fileID); err != nil {
+			return err
 		}
 	}
-
-	if s.root == nil {
-		return nil, nil
-	}
-
-	// If the path is stored as an empty container, it has no children.
-	if _, ok := s.empty[key]; ok {
-		return []string{}, nil
-	}
-
-	// If the path is a leaf value, it's a conflict for requesting sub-keys.
-	if _, ok := s.data[key]; ok {
-		return nil, errutil.Explain(nil, "property conflict at path %s", key)
-	}
-
-	n := s.root
-	for i, pathNode := range path {
-		if n == nil || pathNode.Type != n.Type {
-			return nil, errutil.Explain(nil, "property conflict at path %s", JoinPath(path[:i+1]))
-		}
-		v, ok := n.Data[pathNode.Elem]
-		if !ok {
-			return nil, nil
-		}
-		n = v
-	}
-
-	if n == nil {
-		return []string{}, nil
-	}
-	return ordered.MapKeys(n.Data), nil
+	return nil
 }
 
 // Has checks whether a given key (or path) exists in the Storage.
@@ -313,4 +291,55 @@ func (s *Storage) Set(key string, val string, file int8) error {
 		s.data[key] = ValueInfo{file, val}
 	}
 	return nil
+}
+
+// SubKeys returns the immediate child keys under the given hierarchical path.
+//
+// For example, if Storage contains keys:
+//
+//	a.b.c
+//	a.b.d
+//
+// then SubKeys("a.b") returns ["c", "d"].
+//
+// If the path points to a leaf value or structural conflict, an error is returned.
+// If the path does not exist, it returns nil.
+func (s *Storage) SubKeys(key string) (_ []string, err error) {
+	var path []Path
+	if key != "" {
+		if path, err = SplitPath(key); err != nil {
+			return nil, err
+		}
+	}
+
+	if s.root == nil {
+		return nil, nil
+	}
+
+	// If the path is stored as an empty container, it has no children.
+	if _, ok := s.empty[key]; ok {
+		return []string{}, nil
+	}
+
+	// If the path is a leaf value, it's a conflict for requesting sub-keys.
+	if _, ok := s.data[key]; ok {
+		return nil, errutil.Explain(nil, "property conflict at path %s", key)
+	}
+
+	n := s.root
+	for i, pathNode := range path {
+		if n == nil || pathNode.Type != n.Type {
+			return nil, errutil.Explain(nil, "property conflict at path %s", JoinPath(path[:i+1]))
+		}
+		v, ok := n.Data[pathNode.Elem]
+		if !ok {
+			return nil, nil
+		}
+		n = v
+	}
+
+	if n == nil {
+		return []string{}, nil
+	}
+	return ordered.MapKeys(n.Data), nil
 }
