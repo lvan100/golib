@@ -15,32 +15,33 @@
  */
 
 // Package ctxcache provides a strongly-typed, context-scoped cache for
-// request- and goroutine-lifecycle data.
+// request-scoped data.
 //
-// ctxcache attaches a concurrency-safe key–value store to a context.Context,
-// allowing data to be implicitly propagated across call boundaries without
-// polluting function signatures.
+// ctxcache attaches a concurrency-safe, write-once key–value store to a
+// context.Context, allowing values to be implicitly propagated across call
+// boundaries without polluting function signatures.
 //
-// Keys are declared explicitly and bound to a concrete Go type using generics,
-// ensuring type safety and preventing key collisions. Each key may be assigned
-// at most once, making ctxcache suitable for passing derived or request-scoped
-// data such as authenticated users, permissions, trace metadata, or computed
-// intermediates.
+// Keys are identified by a combination of a string name and a Go type via
+// generics, ensuring type safety and preventing collisions between values
+// of different types—even if they share the same string identifier.
 //
-// The cache lifecycle is tied to the context via an explicit cancel function.
-// By default, all cached values are cleared when the cancel function is called.
-// For background goroutines that outlive the original request, selected values
-// can be preserved using KeepAlive.
+// Each key may be assigned exactly once. After a value is set, it can be
+// retrieved multiple times until the cache is cleared.
+//
+// The cache lifecycle is explicitly controlled by a cancel function returned
+// by Init. When the cancel function is called, all cached values are removed
+// and the cache becomes permanently unusable.
+//
+// ctxcache is not a general-purpose cache. It is designed for structured,
+// short-lived, in-process data bound to a context's lifetime, such as
+// authenticated users, permissions, trace metadata, or computed intermediates.
 //
 // Typical usage:
 //
 //  1. Initialize the cache at the request boundary (e.g. HTTP middleware).
-//  2. Declare required keys at the entry point of business logic.
-//  3. Set each value exactly once and retrieve it via Get.
-//  4. Defer the cancel function to clean up request-scoped data.
-//
-// ctxcache is not a general-purpose cache. It is designed for structured,
-// short-lived, in-process data bound to a context's lifetime.
+//  2. Set each value at most once using Set.
+//  3. Retrieve values using Get in downstream code.
+//  4. Defer the cancel function returned by Init to clean up request-scoped data.
 package ctxcache
 
 import (
@@ -53,56 +54,13 @@ import (
 var (
 	ErrCacheNotInitialized = errors.New("cache not initialized")
 	ErrCacheAlreadyCleared = errors.New("cache already cleared")
-	ErrKeyNotDeclared      = errors.New("key not declared")
-	ErrKeyTypeMismatch     = errors.New("key type mismatch")
-	ErrValueNotSet         = errors.New("value not set")
-	ErrValueAlreadySet     = errors.New("value already set")
+	ErrKeyNotSet           = errors.New("key not set")
+	ErrKeyAlreadySet       = errors.New("key already set")
 )
 
 type cacheKeyType struct{}
 
 var cacheKey = cacheKeyType{}
-
-// Cache holds user-scoped data associated with a context.
-//
-// Internally, Cache attaches a concurrency-safe map to a context.Context.
-// The map is propagated through the context without appearing in function
-// signatures, making it suitable for passing data across modules.
-//
-// Typical usage:
-//
-//  1. Initialize the cache in HTTP middleware using Init.
-//  2. Declare all required keys at the entry point of your business logic using Declare.
-//  3. Set values using Set and retrieve them using Get.
-//  4. Defer the cancel function returned by Init to clean up cached data.
-//
-// By default, all cached values are removed when the cancel function runs.
-// KeepAlive can be used to extend the lifetime of specific keys for background goroutines.
-type Cache struct {
-	mutex     sync.Mutex
-	values    map[any]any
-	keepAlive map[any]struct{}
-	cleared   bool
-}
-
-// Clear removes all cached values and marks the cache as cleared.
-func (cache *Cache) Clear() {
-	cache.mutex.Lock()
-	defer cache.mutex.Unlock()
-
-	if cache.cleared {
-		return
-	}
-	cache.cleared = true
-
-	for k := range cache.values {
-		if _, ok := cache.keepAlive[k]; !ok {
-			delete(cache.values, k)
-		}
-	}
-
-	clear(cache.keepAlive)
-}
 
 // getCache retrieves the Cache attached to the given context, if any.
 func getCache(ctx context.Context) (*Cache, bool) {
@@ -110,146 +68,86 @@ func getCache(ctx context.Context) (*Cache, bool) {
 	return cache, ok
 }
 
-// Init attaches a Cache to the given context and returns the new context
-// along with a cancel function.
+// Cache holds context-scoped data associated with a context.Context.
 //
-// Only one Cache may be attached to a context. Repeated calls to Init
-// are safe: if a Cache already exists, Init returns the original context
-// and the same cancel function created previously.
+// Internally, Cache maintains a mutex-protected map keyed by strongly typed
+// keys. The cache is propagated through the context without appearing in
+// function signatures, making it suitable for passing data across modules.
+//
+// A Cache is write-once per key: each key may be assigned a value exactly once.
+// Values can be read multiple times until the cache is cleared.
+//
+// Once cleared, the cache becomes permanently unusable; subsequent Get or Set
+// operations will return ErrCacheAlreadyCleared.
+type Cache struct {
+	mutex   sync.Mutex
+	values  map[any]any
+	cleared bool
+}
+
+// Clear removes all cached values and marks the cache as cleared.
+//
+// Clear is idempotent. Only the first call performs cleanup; subsequent calls
+// have no effect.
+//
+// After Clear is called, the cache is permanently unusable. All future Get or
+// Set operations will return ErrCacheAlreadyCleared.
+func (cache *Cache) Clear() {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
+
+	if cache.cleared {
+		return
+	}
+
+	cache.values = nil
+	cache.cleared = true
+}
+
+// Init attaches a Cache to the given context and returns the new context along
+// with a cancel function.
+//
+// Only one Cache may be attached to a context. Repeated calls to Init with the
+// same context are safe: if a Cache already exists, Init returns the original
+// context and the same cancel function created previously.
+//
+// The returned cancel function should typically be deferred at the request
+// boundary (e.g. in HTTP middleware) to ensure request-scoped data is cleaned up.
 //
 // Only the first call to the cancel function performs actual cleanup.
 // Subsequent calls are safe but have no effect.
-//
-// Typical usage is in HTTP middleware, where the cancel function is deferred
-// to clean up cached data at the end of the request.
-//
-// Background goroutines:
-//
-// If a goroutine continues executing after the request completes and
-// still uses the same context, cached data may outlive the request.
-// In such cases, KeepAlive should be used to explicitly extend the lifetime
-// of specific values.
-//
-// If the cancel function is never called, cached data will remain reachable
-// as long as the associated context is reachable.
 func Init(ctx context.Context) (_ context.Context, cancel func()) {
 	if cache, ok := getCache(ctx); ok {
 		return ctx, cache.Clear
 	}
-
-	m := &Cache{
-		values:    make(map[any]any),
-		keepAlive: make(map[any]struct{}),
-	}
-
+	m := &Cache{values: make(map[any]any)}
 	return context.WithValue(ctx, &cacheKey, m), m.Clear
 }
 
-// KeepAlive prevents a key from being removed during cache cleanup.
+// TypedKey represents a strongly typed cache key.
 //
-// Use this when launching background goroutines that may continue executing
-// after an HTTP request completes but still require access to cached data.
-//
-// Keys marked with KeepAlive will not be deleted when the cancel function
-// returned by Init is executed.
-//
-// The cached value remains stored in the Cache as long as the Cache itself
-// is reachable (typically via the associated context). Once the Cache
-// becomes unreachable, values are reclaimed by garbage collection.
-//
-// KeepAlive only affects cleanup triggered by the cancel function; it does
-// not extend the lifetime of the context itself.
-//
-// If the Cache is not initialized or has already been cleared, the call
-// is silently ignored.
-func KeepAlive[T any](ctx context.Context, k TypeKey[T]) {
-	cache, ok := getCache(ctx)
-	if !ok {
-		return
-	}
-
-	cache.mutex.Lock()
-	defer cache.mutex.Unlock()
-
-	if cache.cleared {
-		return
-	}
-
-	cache.keepAlive[k] = struct{}{}
-}
-
-// TypeValue wraps a cached value.
-//
-// IsSet indicates whether the value has been set.
-// Value holds the actual data.
-type TypeValue[T any] struct {
-	IsSet bool
-	Value T
-}
-
-// TypeKey represents a strongly typed cache key.
-//
-// Each key is associated with a specific Go type via generics, preventing
-// collisions between keys of different types—even if they share the same
-// string identifier.
-type TypeKey[T any] struct {
+// A TypedKey is defined by a string identifier and a Go type parameter.
+// Keys with the same string but different type parameters are considered
+// distinct and do not collide.
+type TypedKey[T any] struct {
 	Key string
 }
 
-// Key creates a new TypeKey with the given string identifier.
-func Key[T any](key string) TypeKey[T] {
-	return TypeKey[T]{Key: key}
-}
-
-func (k TypeKey[T]) String() string {
+func (k TypedKey[T]) String() string {
 	var zero T
 	return fmt.Sprintf("%s(%T)", k.Key, zero)
 }
 
-// Declare registers one or more keys in the Cache.
-//
-// Keys must be declared before they can be set or retrieved.
-//
-// If the Cache is not initialized or already cleared, Declare is a no-op.
-//
-// Declaring the same key multiple times is allowed; initialization is
-// idempotent. However, Set must not be called before the first declaration.
-//
-// Best practice is to declare all required keys in a single place—typically
-// at the beginning of an HTTP handler or controller—rather than in middleware.
-func Declare[T any](ctx context.Context, keys ...TypeKey[T]) {
-	cache, ok := getCache(ctx)
-	if !ok {
-		return
-	}
-
-	cache.mutex.Lock()
-	defer cache.mutex.Unlock()
-
-	if cache.cleared {
-		return
-	}
-
-	for _, k := range keys {
-		if _, exists := cache.values[k]; !exists {
-			cache.values[k] = TypeValue[T]{IsSet: false}
-		}
-	}
-}
-
 // Get retrieves the value associated with the given key.
 //
-// The key must have been declared using Declare, and a value must have
-// been assigned using Set.
-//
 // Returns an error if:
-// - the cache is not initialized or has been cleared,
-// - the key was not declared,
-// - the value has not been set, or
-// - the key's type does not match.
-func Get[T any](ctx context.Context, k TypeKey[T]) (T, error) {
+//   - the cache is not initialized,
+//   - the cache has already been cleared, or
+//   - no value has been set for the given key.
+func Get[T any](ctx context.Context, key string) (T, error) {
 	var zero T
 
+	k := TypedKey[T]{Key: key}
 	cache, ok := getCache(ctx)
 	if !ok {
 		return zero, fmt.Errorf("%s: %w", k, ErrCacheNotInitialized)
@@ -264,32 +162,22 @@ func Get[T any](ctx context.Context, k TypeKey[T]) (T, error) {
 
 	v, ok := cache.values[k]
 	if !ok {
-		return zero, fmt.Errorf("%s: %w", k, ErrKeyNotDeclared)
+		return zero, fmt.Errorf("%s: %w", k, ErrKeyNotSet)
 	}
 
-	x, ok := v.(TypeValue[T])
-	if !ok {
-		return zero, fmt.Errorf("%s: %w", k, ErrKeyTypeMismatch)
-	}
-
-	if !x.IsSet {
-		return zero, fmt.Errorf("%s: %w", k, ErrValueNotSet)
-	}
-
-	return x.Value, nil
+	return v.(T), nil
 }
 
 // Set assigns a value to the given key.
 //
-// The key must have been declared using Declare.
-// Each key may be assigned exactly once; subsequent attempts return an error.
+// Each key may be assigned exactly once. Subsequent attempts to set the same
+// key return ErrKeyAlreadySet.
 //
 // Returns an error if:
-// - the cache is not initialized or has been cleared,
-// - the key was not declared,
-// - the value has already been set, or
-// - the key's type does not match.
-func Set[T any](ctx context.Context, k TypeKey[T], value T) error {
+//   - the cache is not initialized, or
+//   - the cache has already been cleared.
+func Set[T any](ctx context.Context, key string, value T) error {
+	k := TypedKey[T]{Key: key}
 	cache, ok := getCache(ctx)
 	if !ok {
 		return fmt.Errorf("%s: %w", k, ErrCacheNotInitialized)
@@ -302,20 +190,10 @@ func Set[T any](ctx context.Context, k TypeKey[T], value T) error {
 		return fmt.Errorf("%s: %w", k, ErrCacheAlreadyCleared)
 	}
 
-	v, ok := cache.values[k]
-	if !ok {
-		return fmt.Errorf("%s: %w", k, ErrKeyNotDeclared)
+	if _, ok = cache.values[k]; ok {
+		return fmt.Errorf("%s: %w", k, ErrKeyAlreadySet)
 	}
 
-	x, ok := v.(TypeValue[T])
-	if !ok {
-		return fmt.Errorf("%s: %w", k, ErrKeyTypeMismatch)
-	}
-
-	if x.IsSet {
-		return fmt.Errorf("%s: %w", k, ErrValueAlreadySet)
-	}
-
-	cache.values[k] = TypeValue[T]{IsSet: true, Value: value}
+	cache.values[k] = value
 	return nil
 }

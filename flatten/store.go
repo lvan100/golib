@@ -58,6 +58,7 @@ package flatten
 
 import (
 	"maps"
+	"strings"
 
 	"github.com/lvan100/golib/errutil"
 	"github.com/lvan100/golib/ordered"
@@ -342,4 +343,25 @@ func (s *Storage) SubKeys(key string) (_ []string, err error) {
 		return []string{}, nil
 	}
 	return ordered.MapKeys(n.Data), nil
+}
+
+// SubMap returns a map of the immediate child keys under the given hierarchical path.
+func (s *Storage) SubMap(key string) (map[string]string, error) {
+
+	if _, err := s.SubKeys(key); err != nil {
+		return nil, err
+	}
+
+	m := make(map[string]string)
+	for k, v := range s.RawData() {
+		i := strings.Index(k, key)
+		if i < 0 {
+			continue
+		}
+		if c := k[i+1]; c != '.' && c != '[' {
+			continue
+		}
+		m[k[i+1:]] = v.Value
+	}
+	return m, nil
 }
